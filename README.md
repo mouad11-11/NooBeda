@@ -34,7 +34,8 @@ NoobEDA acts as a graphical control deck over best-in-class open-source engines:
 | **[Icarus Verilog](https://github.com/steveicarus/iverilog)** | Verilog / SystemVerilog simulation and AST elaboration |
 | **[GTKWave](https://gtkwave.sourceforge.net/)** | Full timing diagram and digital bus waveform inspection |
 | **[Yosys](https://github.com/YosysHQ/yosys)** | RTL synthesis engine for gate mapping and structural extraction |
-| **[Graphviz](https://graphviz.org/)** | Netlist rendering to clean SVG schematic diagrams |
+| **[netlistsvg](https://github.com/nturley/netlistsvg)** | High-quality electronic schematic renderer with standard IEEE symbols |
+| **[Graphviz](https://graphviz.org/)** | Fallback netlist rendering engine |
 | **[openFPGALoader](https://github.com/trabucayre/openFPGALoader)** | Universal JTAG boundary-scan and FPGA bitstream flasher |
 
 ---

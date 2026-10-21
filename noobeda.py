@@ -50,6 +50,7 @@ IVERILOG_BIN = find_binary("iverilog")
 VVP_BIN = find_binary("vvp")
 GTKWAVE_BIN = find_binary("gtkwave")
 OPENFPGA_BIN = find_binary("openFPGALoader")
+NETLISTSVG_BIN = find_binary("netlistsvg")
 DOT_BIN = find_binary("dot")
 
 # ==============================================================================
@@ -530,20 +531,34 @@ class NoobEDAApp(tk.Tk):
         cwd = os.path.dirname(hdl)
         base = os.path.basename(hdl)
         top = self.top_module.get() or os.path.splitext(base)[0]
-        self.log(f"--- [Phase 4] Generating Logic Schematic for {top} ---")
-        
+        has_netlistsvg = bool(shutil.which(NETLISTSVG_BIN))
+        renderer_name = "netlistsvg (electronic symbols)" if has_netlistsvg else "Graphviz (fallback)"
+        self.log(f"--- [Phase 4] Generating Logic Schematic for {top} using {renderer_name} ---")
+
+        json_out = "netlist.json"
+        svg_out = "schematic.svg"
+
         if base.lower().endswith((".vhd", ".vhdl")):
             synth_v = os.path.join(cwd, "_noobeda_synth.v")
             all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not ("tb" in f.lower() or "test" in f.lower())]
             files_str = " ".join(f'"{f}"' for f in all_vhdl)
             ghdl_cmd = f'"{GHDL_BIN}" --synth --std=08 {files_str} -e {top} > "{synth_v}"'
-            yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; show -format svg -prefix schematic {top}"
-            full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}"'
+            
+            if has_netlistsvg:
+                yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; write_json {json_out}"
+                full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
+            else:
+                yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; show -format svg -prefix schematic {top}"
+                full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}"'
             self.run_cmd_async(full_cmd, cwd=cwd, on_success=self.open_schematic)
         else:
-            yosys_script = f"read_verilog {base}; proc; opt; show -format svg -prefix schematic {top}"
-            cmd = f'"{YOSYS_BIN}" -p "{yosys_script}"'
-            self.run_cmd_async(cmd, cwd=cwd, on_success=self.open_schematic)
+            if has_netlistsvg:
+                yosys_script = f"read_verilog {base}; proc; opt; write_json {json_out}"
+                full_cmd = f'"{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
+            else:
+                yosys_script = f"read_verilog {base}; proc; opt; show -format svg -prefix schematic {top}"
+                full_cmd = f'"{YOSYS_BIN}" -p "{yosys_script}"'
+            self.run_cmd_async(full_cmd, cwd=cwd, on_success=self.open_schematic)
 
     def open_schematic(self):
         cwd = self.work_dir.get()
