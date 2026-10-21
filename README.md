@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="NoobEDA Logo" width="180" height="180" style="border-radius: 20px;">
+</p>
+
 # NoobEDA ⚡
 
 > **The Zero-Bloat, Beginner-Friendly Cockpit for Open-Source FPGA & Digital Design**
