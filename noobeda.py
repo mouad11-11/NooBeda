@@ -21,7 +21,7 @@ COMMON_TOOL_DIRS = [
     r"C:\tools\oss-cad-suite\lib",
     r"C:\tools\gtkwave-win64\gtkwave64\bin",
     r"C:\tools\ghdl\bin",
-    r"C:\tools\Graphviz\Graphviz-16.1.0-win64\bin",
+    r"C:\Users\hp\AppData\Roaming\npm",
     "/usr/bin",
     "/usr/local/bin",
     "/opt/homebrew/bin",
@@ -51,7 +51,6 @@ VVP_BIN = find_binary("vvp")
 GTKWAVE_BIN = find_binary("gtkwave")
 OPENFPGA_BIN = find_binary("openFPGALoader")
 NETLISTSVG_BIN = find_binary("netlistsvg")
-DOT_BIN = find_binary("dot")
 
 # ==============================================================================
 # Main Application
@@ -150,7 +149,7 @@ class NoobEDAApp(tk.Tk):
 
         # Toolchain health status badge
         tools_ready = bool(shutil.which(GHDL_BIN) or shutil.which(IVERILOG_BIN))
-        status_text = "Toolchain: Active" if tools_ready else "Toolchain: In PATH (auto-detect)"
+        status_text = "Toolchain: GHDL + Yosys + netlistsvg + GTKWave" if tools_ready else "Toolchain: In PATH (auto-detect)"
         status_badge = ttk.Label(header, text=status_text, font=("Segoe UI", 9), foreground="#a6e3a1")
         status_badge.pack(side=tk.RIGHT, pady=4)
 
@@ -528,12 +527,14 @@ class NoobEDAApp(tk.Tk):
             messagebox.showerror("Error", "Please select a valid HDL file.")
             return
 
+        if not shutil.which(NETLISTSVG_BIN):
+            messagebox.showerror("netlistsvg Missing", "netlistsvg is required to render electronic schematics.\nPlease install it via: npm install -g netlistsvg")
+            return
+
         cwd = os.path.dirname(hdl)
         base = os.path.basename(hdl)
         top = self.top_module.get() or os.path.splitext(base)[0]
-        has_netlistsvg = bool(shutil.which(NETLISTSVG_BIN))
-        renderer_name = "netlistsvg (electronic symbols)" if has_netlistsvg else "Graphviz (fallback)"
-        self.log(f"--- [Phase 4] Generating Logic Schematic for {top} using {renderer_name} ---")
+        self.log(f"--- [Phase 4] Generating Electronic Schematic for {top} (netlistsvg) ---")
 
         json_out = "netlist.json"
         svg_out = "schematic.svg"
@@ -543,21 +544,12 @@ class NoobEDAApp(tk.Tk):
             all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not ("tb" in f.lower() or "test" in f.lower())]
             files_str = " ".join(f'"{f}"' for f in all_vhdl)
             ghdl_cmd = f'"{GHDL_BIN}" --synth --std=08 {files_str} -e {top} > "{synth_v}"'
-            
-            if has_netlistsvg:
-                yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; write_json {json_out}"
-                full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
-            else:
-                yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; show -format svg -prefix schematic {top}"
-                full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}"'
+            yosys_script = f"read_verilog _noobeda_synth.v; proc; opt; write_json {json_out}"
+            full_cmd = f'{ghdl_cmd} && "{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
             self.run_cmd_async(full_cmd, cwd=cwd, on_success=self.open_schematic)
         else:
-            if has_netlistsvg:
-                yosys_script = f"read_verilog {base}; proc; opt; write_json {json_out}"
-                full_cmd = f'"{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
-            else:
-                yosys_script = f"read_verilog {base}; proc; opt; show -format svg -prefix schematic {top}"
-                full_cmd = f'"{YOSYS_BIN}" -p "{yosys_script}"'
+            yosys_script = f"read_verilog {base}; proc; opt; write_json {json_out}"
+            full_cmd = f'"{YOSYS_BIN}" -p "{yosys_script}" && "{NETLISTSVG_BIN}" {json_out} -o {svg_out}'
             self.run_cmd_async(full_cmd, cwd=cwd, on_success=self.open_schematic)
 
     def open_schematic(self):

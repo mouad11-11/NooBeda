@@ -39,7 +39,6 @@ NoobEDA acts as a graphical control deck over best-in-class open-source engines:
 | **[GTKWave](https://gtkwave.sourceforge.net/)** | Full timing diagram and digital bus waveform inspection |
 | **[Yosys](https://github.com/YosysHQ/yosys)** | RTL synthesis engine for gate mapping and structural extraction |
 | **[netlistsvg](https://github.com/nturley/netlistsvg)** | High-quality electronic schematic renderer with standard IEEE symbols |
-| **[Graphviz](https://graphviz.org/)** | Fallback netlist rendering engine |
 | **[openFPGALoader](https://github.com/trabucayre/openFPGALoader)** | Universal JTAG boundary-scan and FPGA bitstream flasher |
 
 ---
@@ -54,13 +53,16 @@ Install the open-source EDA engines:
   Download the ready-to-run [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases/latest) or install via your system package manager:
   ```bash
   # Debian / Ubuntu
-  sudo apt install ghdl iverilog gtkwave yosys graphviz
+  sudo apt install ghdl iverilog gtkwave yosys nodejs npm
+  npm install -g netlistsvg
 
   # Arch Linux
-  sudo pacman -S ghdl iverilog gtkwave yosys graphviz
+  sudo pacman -S ghdl iverilog gtkwave yosys nodejs npm
+  npm install -g netlistsvg
 
   # macOS (Homebrew)
-  brew install ghdl icarus-verilog gtkwave yosys graphviz
+  brew install ghdl icarus-verilog gtkwave yosys node
+  npm install -g netlistsvg
   ```
 
 ### 2. Clone and Run
