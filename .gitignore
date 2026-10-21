@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.vcd
+*.vvp
+*.dot
+*.svg
+*.log
+_noobeda_synth.v
+_ghdl_synth.v
+work-obj*.cf
