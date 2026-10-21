@@ -67,15 +67,12 @@ class NoobEDAApp(tk.Tk):
         self.style.theme_use("clam")
         self.configure_styles()
 
-        # Workspace State - Adaptive to Current Working Directory
-        self.work_dir = tk.StringVar(value=os.getcwd())
+        # Workspace State - Empty by default for fresh user sessions
+        self.work_dir = tk.StringVar(value="")
         self.hdl_file = tk.StringVar(value="")
         self.top_module = tk.StringVar(value="")
         self.tb_file = tk.StringVar(value="")
         self.cable_mode = tk.StringVar(value="USB-Blaster (JTAG)")
-
-        # Auto-detect existing HDL files in workspace
-        self.auto_detect_workspace()
 
         self.create_layout()
 
@@ -400,15 +397,21 @@ class NoobEDAApp(tk.Tk):
             self.log(f"Switched active workspace to: {d}")
 
     def browse_hdl(self):
-        f = filedialog.askopenfilename(initialdir=self.work_dir.get(), filetypes=[("VHDL / Verilog", "*.vhd;*.vhdl;*.v;*.sv"), ("All Files", "*.*")])
+        init_d = self.work_dir.get() if self.work_dir.get() and os.path.isdir(self.work_dir.get()) else None
+        f = filedialog.askopenfilename(initialdir=init_d, filetypes=[("VHDL / Verilog", "*.vhd;*.vhdl;*.v;*.sv"), ("All Files", "*.*")])
         if f:
             self.hdl_file.set(f)
             self.top_module.set(os.path.splitext(os.path.basename(f))[0])
+            if not self.work_dir.get():
+                self.work_dir.set(os.path.dirname(f))
 
     def browse_tb(self):
-        f = filedialog.askopenfilename(initialdir=self.work_dir.get(), filetypes=[("Testbench Files", "*.vhd;*.vhdl;*.v;*.sv"), ("All Files", "*.*")])
+        init_d = self.work_dir.get() if self.work_dir.get() and os.path.isdir(self.work_dir.get()) else None
+        f = filedialog.askopenfilename(initialdir=init_d, filetypes=[("Testbench Files", "*.vhd;*.vhdl;*.v;*.sv"), ("All Files", "*.*")])
         if f:
             self.tb_file.set(f)
+            if not self.work_dir.get():
+                self.work_dir.set(os.path.dirname(f))
 
     def run_cmd_async(self, cmd, cwd=None, on_success=None):
         def worker():
