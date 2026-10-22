@@ -57,9 +57,9 @@ NoobEDA is organized into a clean **3-Pane Cockpit**:
 ### 1.2 Right Pane: Studio Notebook
 Contains 4 specialized workspace tabs:
 1. **Operations**: The main mission control for design elaboration, latch checks, simulation, and synthesis.
-2. **Hardware Decision Tree**: Interactive checklist and diagnostic guide for FPGA safety rules.
-3. **Schematic View**: High-resolution embedded vector canvas powered by PyMuPDF with real-time drag-to-pan and mouse-wheel zoom.
-4. **Pin & Chip Planner**: Visual FPGA pad assignment grid with fuzzy auto-mapping and multi-vendor constraint exporters.
+2. **Schematic View**: High-resolution embedded vector canvas powered by PyMuPDF with real-time drag-to-pan and mouse-wheel zoom.
+3. **Pin & Chip Planner**: Visual FPGA pad assignment grid with fuzzy auto-mapping and multi-vendor constraint exporters.
+4. **Hardware Decision Tree & Rules**: Interactive checklist and diagnostic guide for FPGA safety rules.
 
 ### 1.3 Bottom Pane: Integrated Terminal
 - Direct execution channel for underlying EDA tools (`ghdl`, `iverilog`, `vvp`, `yosys`, `netlistsvg`, `openFPGALoader`).

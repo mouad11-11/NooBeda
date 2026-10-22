@@ -304,20 +304,20 @@ class NoobEDAApp(tk.Tk):
         self.notebook.add(self.tab_ops, text="  Operations (5 Phases)  ")
         self.build_operations_tab(self.tab_ops)
 
-        # Tab 2: Decision Tree Guide
-        self.tab_tree = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(self.tab_tree, text="  Decision Tree & Rules  ")
-        self.build_tree_tab(self.tab_tree)
-
-        # Tab 3: Embedded Schematic Viewer
+        # Tab 2: Embedded Schematic Viewer
         self.tab_schem = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.tab_schem, text="  🎨 Schematic View  ")
         self.build_schematic_tab(self.tab_schem)
 
-        # Tab 4: Pin & Chip Planner
+        # Tab 3: Pin & Chip Planner
         self.tab_pins = ttk.Frame(self.notebook, padding=10)
         self.notebook.add(self.tab_pins, text="  📍 Pin & Chip Planner  ")
         self.build_pin_planner_tab(self.tab_pins)
+
+        # Tab 4: Decision Tree Guide (Last)
+        self.tab_tree = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_tree, text="  Decision Tree & Rules  ")
+        self.build_tree_tab(self.tab_tree)
 
         # ======================================================================
         # BOTTOM: Interactive Terminal & Execution Console
