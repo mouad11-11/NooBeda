@@ -22,7 +22,7 @@ Traditional vendor EDA software (Quartus, Vivado, ModelSim) takes **20–40 GB**
 - ⚡ **Instant Analysis & Elaboration**: Run fast syntax checks and submodule port bindings via GHDL or Icarus Verilog in < 2 seconds.
 - 🔍 **Inferred Latch Detector**: Spot accidental asynchronous latches (missing `else` or default branches) before synthesis.
 - 🧪 **1-Click Simulation → Waveforms**: Compile, simulate, and launch **GTKWave** or view interactive waveforms inside your editor via `.vcd`.
-- 🎨 **RTL Vector Schematics**: Translates your behavioral HDL into interactive vector diagrams (`.svg`) via Yosys and Graphviz with zoom and wire tracing.
+- 🎨 **RTL Vector Schematics**: Translates your behavioral HDL into interactive vector diagrams (`.svg`) via Yosys and netlistsvg with standard IEEE electronic logic symbols.
 - 🔌 **Hardware JTAG Scanner**: Detect connected USB-Blaster, FTDI, or other programming cables using `openFPGALoader`.
 - 🧠 **Embedded Decision Guide**: Diagnostic knowledge base covering active-low buttons, 7-segment displays, clock domains, and unused pin protection.
 

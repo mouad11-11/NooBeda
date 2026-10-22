@@ -8,4 +8,5 @@ __pycache__/
 *.log
 _noobeda_synth.v
 _ghdl_synth.v
+netlist.json
 work-obj*.cf
