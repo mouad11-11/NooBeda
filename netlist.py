@@ -60,3 +60,53 @@ def prepare_svg_for_rendering(svg_content):
     svg = re.sub(r'<rect\s+', rect_repl, svg)
     
     return svg
+
+def parse_yosys_latch_output(output_text: str):
+    """
+    Parses synthesis (Yosys or GHDL) output to find inferred latches.
+    Returns a list of dicts: [{'module': ..., 'signal': ..., 'line': ..., 'raw': ...}]
+    """
+    latches = []
+    yosys_pattern = r"Latch inferred for signal [`']\\?([a-zA-Z0-9_]+)\.\\?([a-zA-Z0-9_]+)['\"]"
+    ghdl_pattern = r"latch infer+ed for net [\"']?([a-zA-Z0-9_]+)[\"']?"
+
+    for line in output_text.splitlines():
+        line_lower = line.lower()
+        if "no latch inferred" in line_lower:
+            continue
+        if "latch inferred for signal" in line_lower:
+            m = re.search(yosys_pattern, line, re.IGNORECASE)
+            # Find line number (e.g., $proc$bad.v:5$1 or bad.v:5)
+            line_m = re.search(r"\$([^\s:]+):([0-9]+)\$", line)
+            if not line_m:
+                line_m = re.search(r":([0-9]+)", line)
+            
+            line_num = line_m.group(2) if (line_m and len(line_m.groups()) >= 2) else (line_m.group(1) if line_m else "?")
+            
+            if m:
+                latches.append({
+                    "module": m.group(1),
+                    "signal": m.group(2),
+                    "line": line_num,
+                    "raw": line.strip()
+                })
+            else:
+                latches.append({
+                    "module": "-",
+                    "signal": line.strip(),
+                    "line": line_num,
+                    "raw": line.strip()
+                })
+        elif "latch infer" in line_lower:
+            # GHDL format: e.g. "file.vhd:9:9:error: latch infered for net \"q\""
+            m = re.search(ghdl_pattern, line, re.IGNORECASE)
+            line_m = re.search(r":([0-9]+):[0-9]+:", line)
+            line_num = line_m.group(1) if line_m else "?"
+            sig = m.group(1) if m else line.strip()
+            latches.append({
+                "module": "VHDL",
+                "signal": sig,
+                "line": line_num,
+                "raw": line.strip()
+            })
+    return latches

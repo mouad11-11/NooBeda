@@ -116,7 +116,7 @@ OPENFPGA_BIN = find_binary("openFPGALoader")
 NETLISTSVG_BIN = find_binary("netlistsvg")
 
 from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module, discover_sources
-from netlist import sanitize_netlist_json, prepare_svg_for_rendering
+from netlist import sanitize_netlist_json, prepare_svg_for_rendering, parse_yosys_latch_output
 from exporters import build_qsf, build_pcf, build_xdc
 
 # ==============================================================================
@@ -1452,20 +1452,83 @@ class NoobEDAApp(tk.Tk):
         if not hdl or not os.path.exists(hdl):
             messagebox.showerror("Error", "Please select or drop a valid HDL file first.")
             return
-        
-        cwd = os.path.dirname(hdl)
+
+        cwd = self.work_dir.get() or os.path.dirname(hdl)
+        build_dir = os.path.join(cwd, "_build")
+        os.makedirs(build_dir, exist_ok=True)
+
         base = os.path.basename(hdl)
         raw_top = self.top_module.get() or os.path.splitext(base)[0]
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
-        self.log(f"--- Checking for Inferred Latches in {top} ---")
-        
-        if base.lower().endswith((".vhd", ".vhdl")):
-            cmd = [GHDL_BIN, "-a", "--std=08", base]
-        else:
-            yosys_script = f"read_verilog {base}; proc; opt"
-            cmd = [YOSYS_BIN, "-p", yosys_script]
-            
-        self.run_cmd_async([cmd], cwd=cwd)
+        self.log(f"--- [Latch Inspection] Checking Inferred Latches in {top} ---")
+
+        if self.current_process is not None:
+            self.log("⚠️ A task is already running. Please wait or click Abort.")
+            return
+
+        def worker():
+            extra_kwargs = {}
+            if sys.platform.startswith("win"):
+                extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                extra_kwargs["start_new_session"] = True
+            extra_kwargs["env"] = configure_toolchain_environment()
+
+            try:
+                if base.lower().endswith((".vhd", ".vhdl")):
+                    all_vhdl = discover_sources(cwd, extensions=(".vhd", ".vhdl"), exclude_tb=True)
+                    synth_v = os.path.join(build_dir, "_synth_latch_check.v")
+                    ghdl_args = [GHDL_BIN, "--synth", f"--workdir={build_dir}", "--std=08", "--out=verilog"] + all_vhdl + ["-e", top]
+                    with open(synth_v, "w", encoding="utf-8") as f_out:
+                        p_ghdl = subprocess.Popen(ghdl_args, cwd=cwd, stdout=f_out, stderr=subprocess.PIPE, text=True, **extra_kwargs)
+                        self.current_process = p_ghdl
+                        _, stderr_data = p_ghdl.communicate()
+                        self.current_process = None
+                    if p_ghdl.returncode != 0:
+                        ghdl_latches = parse_yosys_latch_output(stderr_data)
+                        if ghdl_latches:
+                            self.log(f"\n⚠️ LATCH CHECK FAILED: {len(ghdl_latches)} Inferred Latch(es) Detected in VHDL!")
+                            for idx, l in enumerate(ghdl_latches, 1):
+                                self.log(f"  [{idx}] Module: '{top}' | Signal: '{l['signal']}' (Line: {l['line']})")
+                            self.log("💡 Recommendation: Add default assignments or full 'else' branches to prevent asynchronous hardware latches.\n")
+                            self.after(0, lambda: messagebox.showwarning("Inferred Latches", f"Detected {len(ghdl_latches)} inferred latch(es) in {top}!\nCheck terminal log for details."))
+                            return
+                        self.log(f"❌ GHDL Synthesis Error:\n{stderr_data}")
+                        return
+                    yosys_target = synth_v
+                    yosys_script = f'read_verilog "{yosys_target}"; hierarchy -check -top {top}; proc; opt'
+                else:
+                    all_v = discover_sources(cwd, extensions=(".v", ".sv"), exclude_tb=True)
+                    if hdl not in all_v:
+                        all_v.insert(0, hdl)
+                    read_cmds = []
+                    for f in all_v:
+                        flag = "-sv" if f.lower().endswith(".sv") else ""
+                        read_cmds.append(f'read_verilog {flag} "{f}";')
+                    yosys_target = " ".join(read_cmds)
+                    yosys_script = f'{yosys_target} hierarchy -check -top {top}; proc; opt'
+
+                p_yosys = subprocess.Popen([YOSYS_BIN, "-p", yosys_script], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **extra_kwargs)
+                self.current_process = p_yosys
+                out_yosys, _ = p_yosys.communicate()
+                self.current_process = None
+
+                latches = parse_yosys_latch_output(out_yosys)
+                if latches:
+                    self.log(f"\n⚠️ LATCH CHECK FAILED: {len(latches)} Inferred Latch(es) Detected!")
+                    for idx, l in enumerate(latches, 1):
+                        self.log(f"  [{idx}] Module: '{l['module']}' | Signal: '{l['signal']}' (Line: {l['line']})")
+                    self.log("💡 Recommendation: Add default assignments or full 'else' branches to prevent asynchronous hardware latches.\n")
+                    self.after(0, lambda: messagebox.showwarning("Inferred Latches", f"Detected {len(latches)} inferred latch(es) in {top}!\nCheck terminal log for details."))
+                else:
+                    self.log(f"\n✅ LATCH CHECK PASSED: Clean design. Zero inferred latches in {top}.\n")
+                    self.after(0, lambda: messagebox.showinfo("Latch Check Passed", f"Zero inferred latches detected in {top}."))
+            except Exception as e:
+                self.current_process = None
+                self.log(f"❌ Latch check error: {e}\n")
+
+        t = threading.Thread(target=worker, daemon=True)
+        t.start()
 
     def run_simulation(self):
         tb = self.tb_file.get()
