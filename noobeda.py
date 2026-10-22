@@ -15,6 +15,13 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+# Optional embedded HTML/SVG viewer
+try:
+    from tkinterweb import HtmlFrame
+    TKINTERWEB_AVAILABLE = True
+except ImportError:
+    TKINTERWEB_AVAILABLE = False
+
 # Enable High-DPI awareness on Windows for crisp typography
 if sys.platform.startswith("win"):
     try:
@@ -28,7 +35,6 @@ if sys.platform.startswith("win"):
 # ==============================================================================
 def configure_toolchain_environment():
     """Configures environment variables and PATH for toolchains across platforms."""
-    # If OSS CAD Suite is present on Windows, prioritize its lib and bin to prevent 0xC0000139 DLL collisions
     if sys.platform.startswith("win"):
         oss_candidates = [
             r"C:\tools\oss-cad-suite",
@@ -82,7 +88,6 @@ def get_candidate_tool_dirs():
         dirs.extend([p for p in candidates if os.path.isdir(p)])
     return dirs
 
-# Inject candidate directories into PATH temporarily if not already present
 for p in get_candidate_tool_dirs():
     if p not in os.environ.get("PATH", ""):
         os.environ["PATH"] = f"{p}{os.pathsep}" + os.environ.get("PATH", "")
@@ -124,6 +129,51 @@ def extract_hdl_entities(filepath):
         return matches
     return []
 
+def extract_hdl_ports(filepath, target_entity=None):
+    """Extracts port declarations (name, direction, type/width) from an HDL file."""
+    try:
+        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
+            code = f.read()
+    except Exception:
+        return []
+
+    ports = []
+    lower_ext = os.path.splitext(filepath)[1].lower()
+
+    if lower_ext in [".vhd", ".vhdl"]:
+        # Find port block inside target entity or first entity
+        ent_pat = rf"(?i)entity\s+{re.escape(target_entity) if target_entity else r'\w+'}\s+is.*?port\s*\((.*?)\);\s*end"
+        m = re.search(ent_pat, code, re.DOTALL)
+        if m:
+            port_text = m.group(1)
+            for line in port_text.split(";"):
+                line = line.strip()
+                if ":" in line:
+                    p_names, rest = line.split(":", 1)
+                    rest = rest.strip()
+                    m_dir = re.search(r"^(inout|in|out|buffer)\b", rest, re.IGNORECASE)
+                    direction = m_dir.group(1).lower() if m_dir else "in"
+                    p_type = rest[len(direction):].strip()
+                    for single_name in p_names.split(","):
+                        single_name = single_name.strip()
+                        if single_name:
+                            ports.append({"name": single_name, "dir": direction, "type": p_type})
+    elif lower_ext in [".v", ".sv"]:
+        # Verilog port extraction
+        mod_pat = rf"(?i)module\s+{re.escape(target_entity) if target_entity else r'\w+'}\s*\((.*?)\);"
+        m = re.search(mod_pat, code, re.DOTALL)
+        if m:
+            port_text = m.group(1)
+            for item in port_text.split(","):
+                item = item.strip()
+                m_v = re.search(r"(input|output|inout)\s*(?:wire|reg)?\s*(\[[^\]]+\])?\s*([a-zA-Z0-9_]+)", item)
+                if m_v:
+                    direction = m_v.group(1).lower()
+                    width = m_v.group(2) or "1-bit"
+                    name = m_v.group(3)
+                    ports.append({"name": name, "dir": direction, "type": width})
+    return ports
+
 def sanitize_netlist_json(json_path):
     """Sanitizes Yosys JSON netlist to strictly satisfy netlistsvg schema (tri-states and inouts)."""
     try:
@@ -161,20 +211,32 @@ class NoobEDAApp(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("NoobEDA - Open-Source FPGA & Digital Design Studio")
-        self.geometry("1260x820")
-        self.minsize(980, 680)
+        self.geometry("1280x840")
+        self.minsize(1020, 700)
         self.configure(bg="#181825")
 
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
         self.configure_styles()
 
-        # Workspace State - Empty by default for fresh session adaptability
+        # Workspace State - Empty by default
         self.work_dir = tk.StringVar(value="")
         self.hdl_file = tk.StringVar(value="")
         self.top_module = tk.StringVar(value="")
         self.tb_file = tk.StringVar(value="")
         self.cable_mode = tk.StringVar(value="USB-Blaster (JTAG)")
+
+        # Pin Planner State
+        self.board_profile_name = tk.StringVar(value="Terasic DE1 (Cyclone II EP2C20F484C7)")
+        self.board_device = "EP2C20F484C7"
+        self.board_family = "Cyclone II"
+        self.board_pins = {}  # { peripheral_label: pin_location }
+        self.design_ports = []  # list of port dicts
+        self.pin_mappings = {}  # { port_name: pin_code }
+
+        # Schematic Viewer Zoom
+        self._current_zoom = 100
+        self._last_svg_path = ""
 
         # Process management for aborting tasks safely
         self.current_process = None
@@ -185,7 +247,6 @@ class NoobEDAApp(tk.Tk):
 
         # Drag-and-drop state
         self._dragged_file = None
-        self._drag_data = {}
 
         # Branding Icon (Cross-Platform)
         base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -208,6 +269,7 @@ class NoobEDAApp(tk.Tk):
         self._tb_map = {}
 
         self.create_layout()
+        self.load_default_board_preset()
 
     def configure_styles(self):
         dark_bg = "#181825"
@@ -224,7 +286,7 @@ class NoobEDAApp(tk.Tk):
         self.style.configure("Header.TLabel", background=card_bg, foreground=accent_blue, font=("Segoe UI", 11, "bold"))
         self.style.configure("Title.TLabel", background=dark_bg, foreground="#cba6f7", font=("Segoe UI", 15, "bold"))
 
-        self.style.configure("TButton", font=("Segoe UI", 9, "bold"), padding=6, background=entry_bg, foreground=fg_white)
+        self.style.configure("TButton", font=("Segoe UI", 9, "bold"), padding=5, background=entry_bg, foreground=fg_white)
         self.style.map("TButton", background=[("active", "#45475a")])
 
         self.style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#3b82f6", foreground="#ffffff")
@@ -240,9 +302,9 @@ class NoobEDAApp(tk.Tk):
         self.style.configure("TNotebook.Tab", background=card_bg, foreground=fg_white, padding=[12, 6], font=("Segoe UI", 10, "bold"))
         self.style.map("TNotebook.Tab", background=[("selected", "#3b82f6")], foreground=[("selected", "#ffffff")])
 
-        # Treeview styling for file explorer
         self.style.configure("Treeview", background="#181825", foreground="#cdd6f4", fieldbackground="#181825", rowheight=24, font=("Segoe UI", 9))
         self.style.map("Treeview", background=[("selected", "#313244")], foreground=[("selected", "#89b4fa")])
+        self.style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
 
     def create_layout(self):
         # Header Bar
@@ -264,24 +326,24 @@ class NoobEDAApp(tk.Tk):
         ttk.Button(ws_bar, text="Open Project Folder", width=18, command=self.browse_workspace).pack(side=tk.RIGHT, padx=(6, 0))
         ttk.Button(ws_bar, text="🔄 Rescan Files", width=14, command=self.rescan_workspace).pack(side=tk.RIGHT, padx=(6, 0))
 
-        # Main Paned Window (Split into Top Half and Bottom Terminal)
+        # Main Vertical Paned Window (Split into Top 4-Tab Cockpit & Bottom Terminal)
         self.v_paned = ttk.PanedWindow(self, orient=tk.VERTICAL)
         self.v_paned.pack(fill=tk.BOTH, expand=True, padx=12, pady=(0, 12))
 
-        # Top Paned Window (Split into Top-Left File Explorer & Top-Right Operations)
+        # Top Horizontal Paned Window (Split into File Explorer & Tabbed Operations)
         self.h_paned = ttk.PanedWindow(self.v_paned, orient=tk.HORIZONTAL)
         self.v_paned.add(self.h_paned, weight=3)
 
         # ======================================================================
-        # TOP-LEFT: Project File Explorer (Clickable & Drag-and-Drop)
+        # TOP-LEFT: Project File Explorer
         # ======================================================================
         left_frame = ttk.Frame(self.h_paned, padding=8, style="Card.TFrame")
         self.h_paned.add(left_frame, weight=1)
 
         explorer_hdr = ttk.Frame(left_frame, style="Card.TFrame")
         explorer_hdr.pack(fill=tk.X, pady=(0, 4))
-        ttk.Label(explorer_hdr, text="📂 Project File Explorer", style="Header.TLabel").pack(side=tk.LEFT)
-        ttk.Label(explorer_hdr, text="Drag to Top/TB or double-click to edit", font=("Segoe UI", 8, "italic"), foreground="#a6adc8").pack(side=tk.RIGHT)
+        ttk.Label(explorer_hdr, text="📂 Project Explorer", style="Header.TLabel").pack(side=tk.LEFT)
+        ttk.Label(explorer_hdr, text="Drag to Drop Box or 2x-click", font=("Segoe UI", 8, "italic"), foreground="#a6adc8").pack(side=tk.RIGHT)
 
         tree_scroll_y = ttk.Scrollbar(left_frame, orient=tk.VERTICAL)
         self.file_tree = ttk.Treeview(left_frame, selectmode="browse", yscrollcommand=tree_scroll_y.set)
@@ -291,13 +353,11 @@ class NoobEDAApp(tk.Tk):
         self.file_tree.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
         tree_scroll_y.pack(side=tk.RIGHT, fill=tk.Y, before=self.file_tree)
 
-        # File Tree Event Bindings (Open in editor + Drag-and-Drop)
         self.file_tree.bind("<Double-Button-1>", self.on_file_double_click)
         self.file_tree.bind("<ButtonPress-1>", self.on_drag_start)
         self.file_tree.bind("<B1-Motion>", self.on_drag_motion)
         self.file_tree.bind("<ButtonRelease-1>", self.on_drag_end)
 
-        # Context Menu for Right-Click
         self.tree_menu = tk.Menu(self, tearoff=0, bg="#1e1e2e", fg="#cdd6f4")
         self.tree_menu.add_command(label="⬆ Set as Top HDL File", command=self.set_selected_as_top)
         self.tree_menu.add_command(label="🧪 Set as Testbench File", command=self.set_selected_as_tb)
@@ -305,7 +365,6 @@ class NoobEDAApp(tk.Tk):
         self.tree_menu.add_command(label="✏️ Open in Text Editor", command=self.open_selected_in_editor)
         self.file_tree.bind("<Button-3>", self.show_tree_context_menu)
 
-        # Quick Actions Below Explorer
         btn_bar = ttk.Frame(left_frame, style="Card.TFrame")
         btn_bar.pack(fill=tk.X, pady=(6, 0))
         ttk.Button(btn_bar, text="⬆ Set Top", width=10, command=self.set_selected_as_top).pack(side=tk.LEFT, padx=(0, 4))
@@ -313,7 +372,7 @@ class NoobEDAApp(tk.Tk):
         ttk.Button(btn_bar, text="✏️ Edit", width=8, command=self.open_selected_in_editor).pack(side=tk.RIGHT)
 
         # ======================================================================
-        # TOP-RIGHT: Operations (Phases 1-5 with 3x Drop Zones & Decision Tree)
+        # TOP-RIGHT: 4-Tab Engineering Studio
         # ======================================================================
         right_frame = ttk.Frame(self.h_paned, style="Card.TFrame")
         self.h_paned.add(right_frame, weight=3)
@@ -322,14 +381,24 @@ class NoobEDAApp(tk.Tk):
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
         # Tab 1: Operations
-        tab_ops = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(tab_ops, text="  Operations (5 Phases)  ")
-        self.build_operations_tab(tab_ops)
+        self.tab_ops = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_ops, text="  Operations (5 Phases)  ")
+        self.build_operations_tab(self.tab_ops)
 
         # Tab 2: Decision Tree Guide
-        tab_tree = ttk.Frame(self.notebook, padding=10)
-        self.notebook.add(tab_tree, text="  Decision Tree & Rules  ")
-        self.build_tree_tab(tab_tree)
+        self.tab_tree = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_tree, text="  Decision Tree & Rules  ")
+        self.build_tree_tab(self.tab_tree)
+
+        # Tab 3: Embedded Schematic Viewer
+        self.tab_schem = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_schem, text="  🎨 Schematic View  ")
+        self.build_schematic_tab(self.tab_schem)
+
+        # Tab 4: Pin & Chip Planner
+        self.tab_pins = ttk.Frame(self.notebook, padding=10)
+        self.notebook.add(self.tab_pins, text="  📍 Pin & Chip Planner  ")
+        self.build_pin_planner_tab(self.tab_pins)
 
         # ======================================================================
         # BOTTOM: Interactive Terminal & Execution Console
@@ -352,7 +421,6 @@ class NoobEDAApp(tk.Tk):
         btn_copy = ttk.Button(term_hdr, text="📋 Copy", width=8, command=self.copy_console)
         btn_copy.pack(side=tk.RIGHT, padx=(4, 0))
 
-        # Terminal Output Box
         self.console = tk.Text(term_frame, bg="#0d0f18", fg="#a6e3a1", font=("Consolas", 10), insertbackground="#ffffff", relief="flat")
         self.console.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
 
@@ -360,7 +428,6 @@ class NoobEDAApp(tk.Tk):
         term_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         self.console.config(yscrollcommand=term_scroll.set)
 
-        # Terminal Command Prompt Bar
         term_input_bar = ttk.Frame(term_frame, style="Card.TFrame")
         term_input_bar.pack(fill=tk.X, pady=(6, 0), side=tk.BOTTOM)
 
@@ -376,6 +443,9 @@ class NoobEDAApp(tk.Tk):
         btn_run = ttk.Button(term_input_bar, text="▶ Run", width=7, style="Primary.TButton", command=self.on_terminal_enter)
         btn_run.pack(side=tk.RIGHT, padx=(6, 0))
 
+    # ==========================================================================
+    # Tab 1: Operations (Phases 1 - 5)
+    # ==========================================================================
     def build_operations_tab(self, parent):
         parent.columnconfigure(0, weight=1)
         parent.columnconfigure(1, weight=1)
@@ -408,7 +478,6 @@ class NoobEDAApp(tk.Tk):
         ent_top = ttk.Entry(p12, textvariable=self.top_module)
         ent_top.pack(fill=tk.X, pady=(2, 6))
 
-        # Actions
         btn_elab = ttk.Button(p12, text="▶ Run Analysis & Elaboration", style="Primary.TButton", command=self.run_elaboration)
         btn_elab.pack(fill=tk.X, pady=(4, 4))
 
@@ -468,6 +537,9 @@ class NoobEDAApp(tk.Tk):
         btn_detect = ttk.Button(p45, text="🔌 Scan Hardware / JTAG Chain", style="Warning.TButton", command=self.scan_hardware)
         btn_detect.pack(fill=tk.X)
 
+    # ==========================================================================
+    # Tab 2: Decision Tree Guide
+    # ==========================================================================
     def build_tree_tab(self, parent):
         paned = ttk.PanedWindow(parent, orient=tk.HORIZONTAL)
         paned.pack(fill=tk.BOTH, expand=True)
@@ -591,17 +663,419 @@ class NoobEDAApp(tk.Tk):
         self.detail_text.delete("1.0", tk.END)
         self.detail_text.insert(tk.END, msg)
 
-    # --- Actions & Drag-and-Drop ---
+    # ==========================================================================
+    # Tab 3: Embedded Schematic Viewer (tkinterweb)
+    # ==========================================================================
+    def build_schematic_tab(self, parent):
+        ctrl_bar = ttk.Frame(parent, style="Card.TFrame")
+        ctrl_bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(ctrl_bar, text="🎨 RTL Schematic View", style="Header.TLabel").pack(side=tk.LEFT, padx=(4, 12))
+
+        ttk.Button(ctrl_bar, text="🔍 Zoom In (+)", width=12, command=lambda: self.zoom_schematic(1.2)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_bar, text="🔍 Zoom Out (-)", width=12, command=lambda: self.zoom_schematic(0.8)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_bar, text="↺ Reset (100%)", width=12, command=lambda: self.zoom_schematic(0)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_bar, text="🔄 Reload", width=9, command=self.reload_schematic_view).pack(side=tk.LEFT, padx=3)
+
+        ttk.Button(ctrl_bar, text="🌐 Browser View", width=14, command=self.open_schematic).pack(side=tk.RIGHT, padx=4)
+
+        if TKINTERWEB_AVAILABLE:
+            self.schem_frame = HtmlFrame(parent, messages_enabled=False)
+            self.schem_frame.pack(fill=tk.BOTH, expand=True)
+            self.schem_frame.load_html("<body style='background-color:#11111b; color:#a6adc8; font-family:Segoe UI; padding:30px; text-align:center;'><h3>Generate a logic schematic from Phase 4 to view it interactively here.</h3></body>")
+        else:
+            fallback_box = tk.Label(parent, bg="#11111b", fg="#cdd6f4", font=("Segoe UI", 11),
+                                    text="Embedded Web Viewer requires 'tkinterweb'.\nRun 'pip install tkinterweb' to enable in-app SVG zooming.\n\nYou can still view schematics by clicking 'Browser View'.",
+                                    justify="center")
+            fallback_box.pack(fill=tk.BOTH, expand=True)
+
+    def load_schematic_in_viewer(self, svg_path):
+        self._last_svg_path = svg_path
+        if not TKINTERWEB_AVAILABLE or not os.path.exists(svg_path):
+            return
+
+        try:
+            svg_uri = svg_path.replace(os.sep, "/")
+            html = f"""
+            <html>
+            <head>
+                <style>
+                    body {{
+                        background-color: #11111b;
+                        margin: 0;
+                        padding: 20px;
+                        display: flex;
+                        justify-content: center;
+                        align-items: flex-start;
+                    }}
+                    img {{
+                        width: {self._current_zoom}%;
+                        height: auto;
+                        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+                        background-color: #ffffff;
+                        border-radius: 6px;
+                    }}
+                </style>
+            </head>
+            <body>
+                <img src="file:///{svg_uri}" alt="Logic Schematic">
+            </body>
+            </html>
+            """
+            self.schem_frame.load_html(html)
+            self.notebook.select(self.tab_schem)
+        except Exception as e:
+            self.log(f"Notice loading in-app viewer: {e}")
+
+    def zoom_schematic(self, factor):
+        if factor == 0:
+            self._current_zoom = 100
+        else:
+            self._current_zoom = max(20, min(600, int(self._current_zoom * factor)))
+        if self._last_svg_path and os.path.exists(self._last_svg_path):
+            self.load_schematic_in_viewer(self._last_svg_path)
+
+    def reload_schematic_view(self):
+        cwd = self.work_dir.get()
+        svg_file = os.path.join(cwd, "schematic.svg") if cwd else ""
+        if svg_file and os.path.exists(svg_file):
+            self.load_schematic_in_viewer(svg_file)
+        else:
+            self.log("ℹ No schematic.svg generated in current workspace yet.")
+
+    # ==========================================================================
+    # Tab 4: Pin & Chip Planner
+    # ==========================================================================
+    def build_pin_planner_tab(self, parent):
+        # Top: Board Selector Bar
+        top_bar = ttk.Frame(parent, style="Card.TFrame")
+        top_bar.pack(fill=tk.X, pady=(0, 6))
+
+        ttk.Label(top_bar, text="Target Board / FPGA Preset:", style="Card.TLabel").pack(side=tk.LEFT, padx=(4, 6))
+        board_presets = [
+            "Terasic DE1 (Cyclone II EP2C20F484C7)",
+            "Terasic DE10-Lite (MAX 10 10M50DAF484C7G)",
+            "Lattice iCE40-HX8K Breakout Board",
+            "Custom Board File...",
+        ]
+        self.combo_board = ttk.Combobox(top_bar, textvariable=self.board_profile_name, values=board_presets, state="readonly", width=36)
+        self.combo_board.pack(side=tk.LEFT, padx=(0, 8))
+        self.combo_board.bind("<<ComboboxSelected>>", self.on_board_preset_changed)
+
+        ttk.Button(top_bar, text="📁 Load Custom File", width=16, command=self.load_custom_board_file).pack(side=tk.LEFT, padx=4)
+
+        self.lbl_board_status = ttk.Label(top_bar, text="Device: EP2C20F484C7 | 46 Pins Loaded", font=("Segoe UI", 9, "bold"), foreground="#a6e3a1")
+        self.lbl_board_status.pack(side=tk.RIGHT, padx=6)
+
+        # Middle: Pin Assignment Table & Controls
+        mid_bar = ttk.Frame(parent, style="Card.TFrame")
+        mid_bar.pack(fill=tk.X, pady=(4, 6))
+
+        ttk.Button(mid_bar, text="⚡ Scan Ports from Top HDL", style="Primary.TButton", command=self.scan_top_entity_ports).pack(side=tk.LEFT, padx=(4, 6))
+        ttk.Button(mid_bar, text="🎯 Auto-Map by Name", style="Success.TButton", command=self.auto_map_pins).pack(side=tk.LEFT, padx=6)
+        ttk.Button(mid_bar, text="🧹 Clear All", width=10, command=self.clear_pin_mappings).pack(side=tk.LEFT, padx=6)
+
+        # Assignment Dropdown for Selected Row
+        ttk.Label(mid_bar, text="Assign Selected to:", style="Card.TLabel").pack(side=tk.LEFT, padx=(16, 6))
+        self.combo_assign_pin = ttk.Combobox(mid_bar, state="readonly", width=24)
+        self.combo_assign_pin.pack(side=tk.LEFT, padx=(0, 6))
+        ttk.Button(mid_bar, text="Assign", width=8, command=self.assign_selected_pin).pack(side=tk.LEFT)
+
+        # Pin Mapping Grid
+        grid_frame = ttk.Frame(parent, style="Card.TFrame")
+        grid_frame.pack(fill=tk.BOTH, expand=True, pady=(2, 6))
+
+        grid_scroll = ttk.Scrollbar(grid_frame, orient=tk.VERTICAL)
+        self.pin_tree = ttk.Treeview(grid_frame, columns=("dir", "type", "pin", "desc"), show="tree headings", selectmode="browse", yscrollcommand=grid_scroll.set)
+        grid_scroll.config(command=self.pin_tree.yview)
+
+        self.pin_tree.heading("#0", text="Top HDL Port", anchor=tk.W)
+        self.pin_tree.heading("dir", text="Direction", anchor=tk.CENTER)
+        self.pin_tree.heading("type", text="Data Type / Bus Width", anchor=tk.W)
+        self.pin_tree.heading("pin", text="Physical FPGA Pin", anchor=tk.W)
+        self.pin_tree.heading("desc", text="Peripheral Description", anchor=tk.W)
+
+        self.pin_tree.column("#0", width=160)
+        self.pin_tree.column("dir", width=90, anchor=tk.CENTER)
+        self.pin_tree.column("type", width=220)
+        self.pin_tree.column("pin", width=140)
+        self.pin_tree.column("desc", width=240)
+
+        self.pin_tree.pack(fill=tk.BOTH, expand=True, side=tk.LEFT)
+        grid_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+        self.pin_tree.bind("<<TreeviewSelect>>", self.on_pin_tree_row_select)
+
+        # Bottom: Constraint Exporters
+        export_bar = ttk.Frame(parent, style="Card.TFrame")
+        export_bar.pack(fill=tk.X, pady=(4, 2))
+
+        ttk.Label(export_bar, text="Export Hardware Constraints:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(4, 10))
+        ttk.Button(export_bar, text="💾 Export .QSF (Quartus / Cyclone)", command=self.export_qsf).pack(side=tk.LEFT, padx=4)
+        ttk.Button(export_bar, text="💾 Export .PCF (nextpnr / iCE40 / ECP5)", command=self.export_pcf).pack(side=tk.LEFT, padx=4)
+        ttk.Button(export_bar, text="💾 Export .XDC (Vivado / Xilinx)", command=self.export_xdc).pack(side=tk.LEFT, padx=4)
+
+    def load_default_board_preset(self):
+        # Default Altera Cyclone II DE1 Pinout (EP2C20F484C7)
+        self.board_pins = {
+            "CLOCK_50": "PIN_L1", "CLOCK_27": "PIN_D12",
+            "KEY[0]": "PIN_R22", "KEY[1]": "PIN_R21", "KEY[2]": "PIN_T22", "KEY[3]": "PIN_T21",
+            "SW[0]": "PIN_L22", "SW[1]": "PIN_L21", "SW[2]": "PIN_M22", "SW[3]": "PIN_V12",
+            "SW[4]": "PIN_W12", "SW[5]": "PIN_U12", "SW[6]": "PIN_U11", "SW[7]": "PIN_M2",
+            "SW[8]": "PIN_M1", "SW[9]": "PIN_L2",
+            "LEDR[0]": "PIN_R20", "LEDR[1]": "PIN_R19", "LEDR[2]": "PIN_U19", "LEDR[3]": "PIN_Y19",
+            "LEDR[4]": "PIN_T18", "LEDR[5]": "PIN_V19", "LEDR[6]": "PIN_Y18", "LEDR[7]": "PIN_U18",
+            "LEDR[8]": "PIN_R18", "LEDR[9]": "PIN_R17",
+            "LEDG[0]": "PIN_U22", "LEDG[1]": "PIN_U21", "LEDG[2]": "PIN_V22", "LEDG[3]": "PIN_V21",
+            "LEDG[4]": "PIN_W22", "LEDG[5]": "PIN_W21", "LEDG[6]": "PIN_Y22", "LEDG[7]": "PIN_Y21",
+            "HEX0[0]": "PIN_J2", "HEX0[1]": "PIN_J1", "HEX0[2]": "PIN_H2", "HEX0[3]": "PIN_H1",
+            "HEX0[4]": "PIN_F2", "HEX0[5]": "PIN_F1", "HEX0[6]": "PIN_E2",
+            "UART_RXD": "PIN_F14", "UART_TXD": "PIN_G12",
+        }
+        self.update_pin_dropdown_values()
+
+    def update_pin_dropdown_values(self):
+        items = [f"{pin} ({desc})" for desc, pin in sorted(self.board_pins.items())]
+        self.combo_assign_pin["values"] = items
+        if items:
+            self.combo_assign_pin.current(0)
+        self.lbl_board_status.config(text=f"Device: {self.board_device} | {len(self.board_pins)} Pins Available")
+
+    def on_board_preset_changed(self, event=None):
+        choice = self.board_profile_name.get()
+        if "DE1" in choice and "Cyclone II" in choice:
+            self.board_device = "EP2C20F484C7"
+            self.board_family = "Cyclone II"
+            self.load_default_board_preset()
+        elif "DE10-Lite" in choice:
+            self.board_device = "10M50DAF484C7G"
+            self.board_family = "MAX 10"
+            self.board_pins = {
+                "MAX10_CLK1_50": "PIN_P11", "MAX10_CLK2_50": "PIN_N14",
+                "KEY[0]": "PIN_B8", "KEY[1]": "PIN_A7",
+                "SW[0]": "PIN_C10", "SW[1]": "PIN_C11", "SW[2]": "PIN_D12", "SW[3]": "PIN_C12",
+                "SW[4]": "PIN_A12", "SW[5]": "PIN_B12", "SW[6]": "PIN_A13", "SW[7]": "PIN_A14",
+                "SW[8]": "PIN_B14", "SW[9]": "PIN_F15",
+                "LEDR[0]": "PIN_A8", "LEDR[1]": "PIN_A9", "LEDR[2]": "PIN_A10", "LEDR[3]": "PIN_B10",
+                "LEDR[4]": "PIN_D13", "LEDR[5]": "PIN_C13", "LEDR[6]": "PIN_E14", "LEDR[7]": "PIN_D14",
+                "LEDR[8]": "PIN_A11", "LEDR[9]": "PIN_B11",
+            }
+            self.update_pin_dropdown_values()
+        elif "iCE40" in choice:
+            self.board_device = "iCE40HX8K-CT256"
+            self.board_family = "iCE40"
+            self.board_pins = {
+                "CLK_12M": "PIN_J3", "LED0": "PIN_M12", "LED1": "PIN_R16", "LED2": "PIN_T15",
+                "SW0": "PIN_K11", "SW1": "PIN_K12", "SW2": "PIN_K13", "SW3": "PIN_K14",
+            }
+            self.update_pin_dropdown_values()
+        elif "Custom" in choice:
+            self.load_custom_board_file()
+
+    def load_custom_board_file(self):
+        f = filedialog.askopenfilename(filetypes=[("FPGA Board Pinouts", "*.qsf;*.pcf;*.xdc;*.csv;*.json"), ("All Files", "*.*")])
+        if not f:
+            return
+
+        try:
+            with open(f, "r", encoding="utf-8", errors="ignore") as fp:
+                content = fp.read()
+
+            new_pins = {}
+            lower_ext = os.path.splitext(f)[1].lower()
+
+            if lower_ext == ".qsf":
+                dev = re.search(r"set_global_assignment\s+-name\s+DEVICE\s+(\S+)", content)
+                if dev:
+                    self.board_device = dev.group(1)
+                fam = re.search(r'set_global_assignment\s+-name\s+FAMILY\s+"?(.*?)"?$', content, re.MULTILINE)
+                if fam:
+                    self.board_family = fam.group(1)
+                for pin_code, sig in re.findall(r"set_location_assignment\s+(PIN_\S+)\s+-to\s+(\S+)", content):
+                    new_pins[sig] = pin_code
+            elif lower_ext == ".pcf":
+                self.board_family = "iCE40"
+                for sig, pin_code in re.findall(r"set_io\s+(\S+)\s+(\S+)", content):
+                    new_pins[sig] = pin_code
+            elif lower_ext == ".xdc":
+                self.board_family = "Artix-7 / Xilinx"
+                for pin_code, sig in re.findall(r"set_property\s+PACKAGE_PIN\s+(\S+)\s+\[get_ports\s+(\S+)\]", content):
+                    new_pins[sig] = pin_code
+            elif lower_ext == ".json":
+                data = json.loads(content)
+                new_pins = data.get("pins", data)
+
+            if new_pins:
+                self.board_pins = new_pins
+                self.board_profile_name.set(os.path.basename(f))
+                self.update_pin_dropdown_values()
+                self.log(f"📍 Loaded custom board profile: {os.path.basename(f)} ({len(new_pins)} pins)")
+            else:
+                messagebox.showwarning("Board File", "No pin assignments could be parsed from this file.")
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to parse board file: {e}")
+
+    def scan_top_entity_ports(self):
+        hdl = self.hdl_file.get()
+        if not hdl or not os.path.exists(hdl):
+            messagebox.showwarning("Pin Planner", "Please select or drop a valid Top HDL file first.")
+            return
+
+        top = self.top_module.get()
+        self.design_ports = extract_hdl_ports(hdl, top)
+        self.refresh_pin_tree()
+        self.log(f"📍 Scanned {len(self.design_ports)} port(s) from {top or os.path.basename(hdl)}.")
+
+    def refresh_pin_tree(self):
+        self.pin_tree.delete(*self.pin_tree.get_children())
+        for port in self.design_ports:
+            name = port["name"]
+            direction = port["dir"]
+            p_type = port["type"]
+            mapped_pin = self.pin_mappings.get(name, "(Unassigned)")
+            desc = self.get_peripheral_description(mapped_pin)
+            self.pin_tree.insert("", "end", text=name, values=(direction, p_type, mapped_pin, desc))
+
+    def get_peripheral_description(self, pin_code):
+        for desc, pin in self.board_pins.items():
+            if pin == pin_code:
+                return desc
+        return "-"
+
+    def auto_map_pins(self):
+        if not self.design_ports:
+            self.scan_top_entity_ports()
+
+        matched = 0
+        for port in self.design_ports:
+            p_name = port["name"].lower()
+            # Fuzzy match common hardware signals
+            for desc, pin in self.board_pins.items():
+                d_lower = desc.lower()
+                if p_name == d_lower or p_name in d_lower or d_lower in p_name:
+                    self.pin_mappings[port["name"]] = pin
+                    matched += 1
+                    break
+                elif any(kw in p_name for kw in ["clk", "clock"]) and "clk" in d_lower:
+                    self.pin_mappings[port["name"]] = pin
+                    matched += 1
+                    break
+                elif any(kw in p_name for kw in ["rst", "reset"]) and ("key" in d_lower or "rst" in d_lower):
+                    self.pin_mappings[port["name"]] = pin
+                    matched += 1
+                    break
+
+        self.refresh_pin_tree()
+        self.log(f"🎯 Auto-mapped {matched} port(s) to board pins.")
+
+    def clear_pin_mappings(self):
+        self.pin_mappings.clear()
+        self.refresh_pin_tree()
+        self.log("🧹 Cleared all pin assignments.")
+
+    def on_pin_tree_row_select(self, event=None):
+        sel = self.pin_tree.selection()
+        if not sel:
+            return
+        port_name = self.pin_tree.item(sel[0], "text")
+        current_pin = self.pin_mappings.get(port_name, "")
+        if current_pin:
+            for idx, val in enumerate(self.combo_assign_pin["values"]):
+                if current_pin in val:
+                    self.combo_assign_pin.current(idx)
+                    break
+
+    def assign_selected_pin(self):
+        sel = self.pin_tree.selection()
+        if not sel:
+            messagebox.showinfo("Pin Assignment", "Select a port in the table first.")
+            return
+
+        port_name = self.pin_tree.item(sel[0], "text")
+        selected_pin_val = self.combo_assign_pin.get()
+        if selected_pin_val:
+            # Extract PIN_XXX code
+            m = re.search(r"(PIN_\S+|\S+)", selected_pin_val)
+            pin_code = m.group(1) if m else selected_pin_val
+            self.pin_mappings[port_name] = pin_code
+            self.refresh_pin_tree()
+            self.log(f"📍 Assigned {port_name} ➔ {pin_code}")
+
+    def export_qsf(self):
+        if not self.pin_mappings:
+            messagebox.showwarning("Export QSF", "No pin assignments mapped yet. Click 'Scan Ports' and 'Auto-Map' first.")
+            return
+
+        cwd = self.work_dir.get() or os.getcwd()
+        top = self.top_module.get() or "top_entity"
+        out_path = os.path.join(cwd, f"{top}.qsf")
+
+        lines = [
+            f"# Quartus II Settings File - Generated by NoobEDA",
+            f"set_global_assignment -name FAMILY \"{self.board_family}\"",
+            f"set_global_assignment -name DEVICE {self.board_device}",
+            f"set_global_assignment -name TOP_LEVEL_ENTITY {top}\n",
+        ]
+        for port, pin in self.pin_mappings.items():
+            lines.append(f"set_location_assignment {pin} -to {port}")
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        self.log(f"💾 Exported Quartus Constraints: {out_path}")
+        messagebox.showinfo("Export Successful", f"Generated Quartus Settings File:\n{out_path}")
+
+    def export_pcf(self):
+        if not self.pin_mappings:
+            messagebox.showwarning("Export PCF", "No pin assignments mapped yet.")
+            return
+
+        cwd = self.work_dir.get() or os.getcwd()
+        top = self.top_module.get() or "top_entity"
+        out_path = os.path.join(cwd, f"{top}.pcf")
+
+        lines = ["# Physical Constraints File (nextpnr) - Generated by NoobEDA"]
+        for port, pin in self.pin_mappings.items():
+            pin_clean = pin.replace("PIN_", "")
+            lines.append(f"set_io {port} {pin_clean}")
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        self.log(f"💾 Exported nextpnr Constraints: {out_path}")
+        messagebox.showinfo("Export Successful", f"Generated PCF File:\n{out_path}")
+
+    def export_xdc(self):
+        if not self.pin_mappings:
+            messagebox.showwarning("Export XDC", "No pin assignments mapped yet.")
+            return
+
+        cwd = self.work_dir.get() or os.getcwd()
+        top = self.top_module.get() or "top_entity"
+        out_path = os.path.join(cwd, f"{top}.xdc")
+
+        lines = ["# Xilinx Design Constraints (Vivado) - Generated by NoobEDA"]
+        for port, pin in self.pin_mappings.items():
+            pin_clean = pin.replace("PIN_", "")
+            lines.append(f"set_property PACKAGE_PIN {pin_clean} [get_ports {{{port}}}]")
+            lines.append(f"set_property IOSTANDARD LVCMOS33 [get_ports {{{port}}}]")
+
+        with open(out_path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines) + "\n")
+
+        self.log(f"💾 Exported Vivado Constraints: {out_path}")
+        messagebox.showinfo("Export Successful", f"Generated XDC File:\n{out_path}")
+
+    # ==========================================================================
+    # Terminal & Execution Actions
+    # ==========================================================================
     def log(self, text):
         self.console.insert(tk.END, text + "\n")
         self.console.see(tk.END)
 
     def clear_console(self):
-        """Clears the console text widget."""
         self.console.delete("1.0", tk.END)
 
     def copy_console(self):
-        """Copies execution log contents to system clipboard."""
         text = self.console.get("1.0", tk.END).strip()
         if text:
             self.clipboard_clear()
@@ -611,7 +1085,6 @@ class NoobEDAApp(tk.Tk):
             messagebox.showinfo("Clipboard", "Console is currently empty.")
 
     def abort_current_task(self):
-        """Terminates any active background EDA compilation or simulation process."""
         if self.current_process:
             try:
                 self.current_process.kill()
@@ -623,7 +1096,6 @@ class NoobEDAApp(tk.Tk):
             self.log("ℹ No active background process to abort.")
 
     def on_terminal_enter(self, event=None):
-        """Runs interactive shell command from terminal prompt in current workspace."""
         cmd = self.term_entry.get().strip()
         if not cmd:
             return
@@ -650,7 +1122,6 @@ class NoobEDAApp(tk.Tk):
             self.term_entry.delete(0, tk.END)
 
     def show_toolchain_diagnostics(self):
-        """Displays interactive modal inspecting paths and versions of all EDA engines."""
         diag_win = tk.Toplevel(self)
         diag_win.title("Toolchain Diagnostics & Health Inspector")
         diag_win.geometry("640x440")
@@ -710,7 +1181,6 @@ class NoobEDAApp(tk.Tk):
             self.rescan_workspace()
 
     def rescan_workspace(self):
-        """Scans workspace directory dynamically for all HDL files and populates file tree & dropdowns."""
         cwd = self.work_dir.get()
         if not cwd or not os.path.exists(cwd):
             self.combo_hdl["values"] = ["(Open a project folder to list files)"]
@@ -726,7 +1196,6 @@ class NoobEDAApp(tk.Tk):
         self._tb_map.clear()
         self.file_tree.delete(*self.file_tree.get_children())
 
-        # Populate File Tree
         node_map = {}
         for root, dirs, files in os.walk(cwd):
             dirs[:] = [d for d in dirs if not d.startswith(".") and d not in ["work", "_build", "__pycache__"]]
@@ -744,7 +1213,6 @@ class NoobEDAApp(tk.Tk):
                 rel_p = os.path.relpath(full_p, cwd)
                 lower = f.lower()
 
-                # Choose icon
                 if lower.endswith((".vhd", ".vhdl")):
                     icon = "🧪" if any(kw in lower for kw in ["tb", "test", "bench"]) else "📦"
                 elif lower.endswith((".v", ".sv")):
@@ -758,9 +1226,8 @@ class NoobEDAApp(tk.Tk):
                 else:
                     icon = "📄"
 
-                item_id = self.file_tree.insert(dir_id, "end", text=f"{icon} {f}", values=(full_p,))
+                self.file_tree.insert(dir_id, "end", text=f"{icon} {f}", values=(full_p,))
 
-                # HDL extraction for dropdowns
                 if lower.endswith((".vhd", ".vhdl", ".v", ".sv")):
                     entities = extract_hdl_entities(full_p)
                     if not entities:
@@ -805,7 +1272,6 @@ class NoobEDAApp(tk.Tk):
     def on_drag_motion(self, event):
         if not self._dragged_file:
             return
-        # Highlight drop zone if mouse hovers over it
         x, y = event.x_root, event.y_root
         target = self.winfo_containing(x, y)
 
@@ -875,7 +1341,6 @@ class NoobEDAApp(tk.Tk):
         top = entities[0] if entities else os.path.splitext(os.path.basename(filepath))[0]
         self.top_module.set(top)
         
-        # Update Drop Box UI
         self.lbl_drop_top_file.config(text=f"📄 {os.path.basename(filepath)}", fg="#ffffff")
         self.lbl_drop_top_ent.config(text=f"Entity: {top}", fg="#a6e3a1")
         self.drop_top_frame.config(bd=2, highlightbackground="#3b82f6", highlightcolor="#3b82f6")
@@ -886,14 +1351,12 @@ class NoobEDAApp(tk.Tk):
         entities = extract_hdl_entities(filepath)
         tb_ent = entities[0] if entities else os.path.splitext(os.path.basename(filepath))[0]
         
-        # Update Drop Box UI
         self.lbl_drop_tb_file.config(text=f"🧪 {os.path.basename(filepath)}", fg="#ffffff")
         self.lbl_drop_tb_ent.config(text=f"Testbench Entity: {tb_ent}", fg="#a6e3a1")
         self.drop_tb_frame.config(bd=2, highlightbackground="#10b981", highlightcolor="#10b981")
         self.log(f"✔ Assigned Testbench: {os.path.basename(filepath)} (Entity: {tb_ent})")
 
     def open_file_in_editor(self, filepath):
-        """Cross-platform opener for source files in VS Code or default system editor."""
         if not filepath or not os.path.exists(filepath):
             return
         self.log(f"✏️ Opening in editor: {os.path.basename(filepath)}")
@@ -1104,7 +1567,8 @@ class NoobEDAApp(tk.Tk):
                     return
 
                 self.log("✅ SCHEMATIC GENERATED SUCCESSFULLY.\n")
-                self.after(0, self.open_schematic)
+                # Auto-load into embedded in-app viewer
+                self.after(0, lambda: self.load_schematic_in_viewer(svg_out))
             except Exception as e:
                 self.log(f"❌ ERROR: {e}\n")
 
