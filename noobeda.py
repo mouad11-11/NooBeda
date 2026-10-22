@@ -225,6 +225,16 @@ class NoobEDAApp(tk.Tk):
         self.style.map("Treeview", background=[("selected", "#222b31")], foreground=[("selected", accent_mint)])
         self.style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
 
+        # High-contrast inputs: solid black text on white fields for crystal-clear visibility
+        self.style.configure("TEntry", foreground="#000000", fieldbackground="#ffffff", insertcolor="#000000")
+        self.style.map("TEntry", foreground=[("disabled", "#666666"), ("!disabled", "#000000")])
+        self.style.configure("TCombobox", foreground="#000000", fieldbackground="#ffffff")
+        self.style.map("TCombobox", fieldbackground=[("readonly", "#ffffff"), ("!disabled", "#ffffff")], foreground=[("readonly", "#000000"), ("!disabled", "#000000")])
+        self.option_add("*TCombobox*Listbox.foreground", "#000000")
+        self.option_add("*TCombobox*Listbox.background", "#ffffff")
+        self.option_add("*TCombobox*Listbox.selectBackground", "#6045f4")
+        self.option_add("*TCombobox*Listbox.selectForeground", "#ffffff")
+
     def create_layout(self):
         # Header Bar
         header = ttk.Frame(self, padding=(16, 10))
