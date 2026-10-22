@@ -6,7 +6,6 @@
 
 > **The Zero-Bloat, Beginner-Friendly Cockpit for Open-Source FPGA & Digital Design**
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 
@@ -89,8 +88,3 @@ flowchart LR
 3. **Simulate**: Run your testbench and view signal transitions in GTKWave with proper Hex/Decimal bus formatting.
 4. **Schematic**: Generate vector SVGs to visually inspect your ALU arithmetic blocks, multiplexers, and state registers.
 5. **Hardware**: Verify cable connectivity before programming silicon.
-
----
-
-## 📄 License
-This project is open-source under the [MIT License](LICENSE).
