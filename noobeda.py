@@ -15,12 +15,13 @@ import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-# Optional embedded HTML/SVG viewer
+# High-Resolution Vector SVG Viewer (PyMuPDF + Pillow)
 try:
-    from tkinterweb import HtmlFrame
-    TKINTERWEB_AVAILABLE = True
+    import pymupdf
+    from PIL import Image, ImageTk
+    PYMUPDF_AVAILABLE = True
 except ImportError:
-    TKINTERWEB_AVAILABLE = False
+    PYMUPDF_AVAILABLE = False
 
 # Enable High-DPI awareness on Windows for crisp typography
 if sys.platform.startswith("win"):
@@ -672,60 +673,72 @@ class NoobEDAApp(tk.Tk):
 
         ttk.Label(ctrl_bar, text="🎨 RTL Schematic View", style="Header.TLabel").pack(side=tk.LEFT, padx=(4, 12))
 
-        ttk.Button(ctrl_bar, text="🔍 Zoom In (+)", width=12, command=lambda: self.zoom_schematic(1.2)).pack(side=tk.LEFT, padx=3)
+        ttk.Button(ctrl_bar, text="🔍 Zoom In (+)", width=12, command=lambda: self.zoom_schematic(1.25)).pack(side=tk.LEFT, padx=3)
         ttk.Button(ctrl_bar, text="🔍 Zoom Out (-)", width=12, command=lambda: self.zoom_schematic(0.8)).pack(side=tk.LEFT, padx=3)
         ttk.Button(ctrl_bar, text="↺ Reset (100%)", width=12, command=lambda: self.zoom_schematic(0)).pack(side=tk.LEFT, padx=3)
         ttk.Button(ctrl_bar, text="🔄 Reload", width=9, command=self.reload_schematic_view).pack(side=tk.LEFT, padx=3)
 
         ttk.Button(ctrl_bar, text="🌐 Browser View", width=14, command=self.open_schematic).pack(side=tk.RIGHT, padx=4)
 
-        if TKINTERWEB_AVAILABLE:
-            self.schem_frame = HtmlFrame(parent, messages_enabled=False)
-            self.schem_frame.pack(fill=tk.BOTH, expand=True)
-            self.schem_frame.load_html("<body style='background-color:#11111b; color:#a6adc8; font-family:Segoe UI; padding:30px; text-align:center;'><h3>Generate a logic schematic from Phase 4 to view it interactively here.</h3></body>")
-        else:
-            fallback_box = tk.Label(parent, bg="#11111b", fg="#cdd6f4", font=("Segoe UI", 11),
-                                    text="Embedded Web Viewer requires 'tkinterweb'.\nRun 'pip install tkinterweb' to enable in-app SVG zooming.\n\nYou can still view schematics by clicking 'Browser View'.",
-                                    justify="center")
-            fallback_box.pack(fill=tk.BOTH, expand=True)
+        canvas_frame = ttk.Frame(parent, style="Card.TFrame")
+        canvas_frame.pack(fill=tk.BOTH, expand=True)
+
+        self.schem_canvas = tk.Canvas(canvas_frame, bg="#ffffff", cursor="hand2", highlightthickness=0)
+        v_bar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.schem_canvas.yview)
+        h_bar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.schem_canvas.xview)
+
+        self.schem_canvas.configure(xscrollcommand=h_bar.set, yscrollcommand=v_bar.set)
+
+        v_bar.pack(side=tk.RIGHT, fill=tk.Y)
+        h_bar.pack(side=tk.BOTTOM, fill=tk.X)
+        self.schem_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Interactive Drag-to-Pan & Mousewheel Zoom
+        self.schem_canvas.bind("<ButtonPress-1>", self.on_schem_pan_start)
+        self.schem_canvas.bind("<B1-Motion>", self.on_schem_pan_move)
+        self.schem_canvas.bind("<MouseWheel>", self.on_schem_mousewheel)
+
+        self.lbl_schem_empty = tk.Label(self.schem_canvas, bg="#ffffff", fg="#6c7086", font=("Segoe UI", 11),
+                                        text="Generate a logic schematic from Phase 4 to inspect the vector circuit here.\n(Drag to pan • Mouse wheel to zoom)")
+        self.lbl_schem_empty.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
+
+    def on_schem_pan_start(self, event):
+        self.schem_canvas.scan_mark(event.x, event.y)
+
+    def on_schem_pan_move(self, event):
+        self.schem_canvas.scan_dragto(event.x, event.y, gain=1)
+
+    def on_schem_mousewheel(self, event):
+        if event.delta > 0:
+            self.zoom_schematic(1.15)
+        elif event.delta < 0:
+            self.zoom_schematic(0.85)
 
     def load_schematic_in_viewer(self, svg_path):
         self._last_svg_path = svg_path
-        if not TKINTERWEB_AVAILABLE or not os.path.exists(svg_path):
+        if not os.path.exists(svg_path):
+            return
+
+        if not PYMUPDF_AVAILABLE:
+            self.open_schematic()
             return
 
         try:
-            svg_uri = svg_path.replace(os.sep, "/")
-            html = f"""
-            <html>
-            <head>
-                <style>
-                    body {{
-                        background-color: #11111b;
-                        margin: 0;
-                        padding: 20px;
-                        display: flex;
-                        justify-content: center;
-                        align-items: flex-start;
-                    }}
-                    img {{
-                        width: {self._current_zoom}%;
-                        height: auto;
-                        box-shadow: 0 4px 16px rgba(0,0,0,0.4);
-                        background-color: #ffffff;
-                        border-radius: 6px;
-                    }}
-                </style>
-            </head>
-            <body>
-                <img src="file:///{svg_uri}" alt="Logic Schematic">
-            </body>
-            </html>
-            """
-            self.schem_frame.load_html(html)
+            self.lbl_schem_empty.place_forget()
+            doc = pymupdf.open(svg_path)
+            page = doc[0]
+            scale = max(0.2, min(5.0, self._current_zoom / 100.0))
+            pix = page.get_pixmap(dpi=int(96 * scale))
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            self._schem_photo = ImageTk.PhotoImage(img)
+
+            self.schem_canvas.delete("all")
+            self.schem_canvas.create_image(0, 0, anchor="nw", image=self._schem_photo)
+            self.schem_canvas.config(scrollregion=(0, 0, pix.width, pix.height))
             self.notebook.select(self.tab_schem)
         except Exception as e:
             self.log(f"Notice loading in-app viewer: {e}")
+            self.open_schematic()
 
     def zoom_schematic(self, factor):
         if factor == 0:
