@@ -113,97 +113,9 @@ GTKWAVE_BIN = find_binary("gtkwave")
 OPENFPGA_BIN = find_binary("openFPGALoader")
 NETLISTSVG_BIN = find_binary("netlistsvg")
 
-def extract_hdl_entities(filepath):
-    """Parses HDL source file to find declared entity (VHDL) or module (Verilog) names."""
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            content = f.read()
-    except Exception:
-        return []
-
-    lower_ext = os.path.splitext(filepath)[1].lower()
-    if lower_ext in [".vhd", ".vhdl"]:
-        matches = re.findall(r"(?i)\bentity\s+([a-zA-Z0-9_]+)\s+is", content)
-        return matches
-    elif lower_ext in [".v", ".sv"]:
-        matches = re.findall(r"(?i)\bmodule\s+([a-zA-Z0-9_]+)\b", content)
-        return matches
-    return []
-
-def extract_hdl_ports(filepath, target_entity=None):
-    """Extracts port declarations (name, direction, type/width) from an HDL file."""
-    try:
-        with open(filepath, "r", encoding="utf-8", errors="ignore") as f:
-            code = f.read()
-    except Exception:
-        return []
-
-    ports = []
-    lower_ext = os.path.splitext(filepath)[1].lower()
-
-    if lower_ext in [".vhd", ".vhdl"]:
-        # Find port block inside target entity or first entity
-        ent_pat = rf"(?i)entity\s+{re.escape(target_entity) if target_entity else r'\w+'}\s+is.*?port\s*\((.*?)\);\s*end"
-        m = re.search(ent_pat, code, re.DOTALL)
-        if m:
-            port_text = m.group(1)
-            for line in port_text.split(";"):
-                line = line.strip()
-                if ":" in line:
-                    p_names, rest = line.split(":", 1)
-                    rest = rest.strip()
-                    m_dir = re.search(r"^(inout|in|out|buffer)\b", rest, re.IGNORECASE)
-                    direction = m_dir.group(1).lower() if m_dir else "in"
-                    p_type = rest[len(direction):].strip()
-                    for single_name in p_names.split(","):
-                        single_name = single_name.strip()
-                        if single_name:
-                            ports.append({"name": single_name, "dir": direction, "type": p_type})
-    elif lower_ext in [".v", ".sv"]:
-        # Verilog port extraction
-        mod_pat = rf"(?i)module\s+{re.escape(target_entity) if target_entity else r'\w+'}\s*\((.*?)\);"
-        m = re.search(mod_pat, code, re.DOTALL)
-        if m:
-            port_text = m.group(1)
-            for item in port_text.split(","):
-                item = item.strip()
-                m_v = re.search(r"(input|output|inout)\s*(?:wire|reg)?\s*(\[[^\]]+\])?\s*([a-zA-Z0-9_]+)", item)
-                if m_v:
-                    direction = m_v.group(1).lower()
-                    width = m_v.group(2) or "1-bit"
-                    name = m_v.group(3)
-                    ports.append({"name": name, "dir": direction, "type": width})
-    return ports
-
-def sanitize_netlist_json(json_path):
-    """Sanitizes Yosys JSON netlist to strictly satisfy netlistsvg schema (tri-states and inouts)."""
-    try:
-        with open(json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        def sanitize_val(val):
-            if isinstance(val, list):
-                return [sanitize_val(x) for x in val]
-            elif isinstance(val, dict):
-                return {k: sanitize_val(v) for k, v in val.items()}
-            elif val in ("z", "Z", "Z0", "Z1", "z0", "z1"):
-                return "x"
-            return val
-
-        for mod in data.get("modules", {}).values():
-            for port in mod.get("ports", {}).values():
-                if port.get("direction") == "inout":
-                    port["direction"] = "output"
-            for cell in mod.get("cells", {}).values():
-                if "connections" in cell:
-                    cell["connections"] = sanitize_val(cell["connections"])
-
-        with open(json_path, "w", encoding="utf-8") as f:
-            json.dump(data, f)
-        return True
-    except Exception as e:
-        print(f"Netlist sanitization notice: {e}")
-        return False
+from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module
+from netlist import sanitize_netlist_json, prepare_svg_for_rendering
+from exporters import build_qsf, build_pcf, build_xdc
 
 # ==============================================================================
 # Main Application
@@ -716,33 +628,7 @@ class NoobEDAApp(tk.Tk):
             self.zoom_schematic(0.85)
 
     def prepare_svg_for_rendering(self, svg_content):
-        """Inlines CSS attributes into raw SVG elements so vector renderers display all wires and labels."""
-        # 1. Add stroke to line elements (wires)
-        svg = re.sub(r'<line\s+', '<line stroke="#000" stroke-width="1.5" ', svg_content)
-        
-        # 2. Add stroke and fill to path elements
-        def path_repl(m):
-            full = m.group(0)
-            if 'splitjoinBody' in full:
-                return '<path stroke="#000" fill="#000" '
-            return '<path stroke="#000" stroke-width="1.5" fill="none" '
-        svg = re.sub(r'<path\s+', path_repl, svg)
-        
-        # 3. Add stroke to circle elements
-        svg = re.sub(r'<circle\s+', '<circle stroke="#000" stroke-width="1.5" fill="none" ', svg)
-        
-        # 4. Add fill to text elements
-        svg = re.sub(r'<text\s+', '<text fill="#000" stroke="none" font-family="monospace" font-weight="bold" ', svg)
-        
-        # 5. Add stroke to rect elements
-        def rect_repl(m):
-            full = m.group(0)
-            if 'splitjoinBody' in full:
-                return '<rect stroke="#000" fill="#000" '
-            return '<rect stroke="#000" stroke-width="1.5" fill="none" '
-        svg = re.sub(r'<rect\s+', rect_repl, svg)
-        
-        return svg
+        return prepare_svg_for_rendering(svg_content)
 
     def load_schematic_in_viewer(self, svg_path):
         self._last_svg_path = svg_path
@@ -1063,17 +949,9 @@ class NoobEDAApp(tk.Tk):
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top)) or "top_entity"
         out_path = os.path.join(cwd, f"{top}.qsf")
 
-        lines = [
-            f"# Quartus II Settings File - Generated by NoobEDA",
-            f"set_global_assignment -name FAMILY \"{self.board_family}\"",
-            f"set_global_assignment -name DEVICE {self.board_device}",
-            f"set_global_assignment -name TOP_LEVEL_ENTITY {top}\n",
-        ]
-        for port, pin in self.pin_mappings.items():
-            lines.append(f"set_location_assignment {pin} -to {port}")
-
+        content = build_qsf(top, self.board_family, self.board_device, self.pin_mappings)
         with open(out_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write(content)
 
         self.log(f"💾 Exported Quartus Constraints: {out_path}")
         messagebox.showinfo("Export Successful", f"Generated Quartus Settings File:\n{out_path}")
@@ -1088,13 +966,9 @@ class NoobEDAApp(tk.Tk):
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top)) or "top_entity"
         out_path = os.path.join(cwd, f"{top}.pcf")
 
-        lines = ["# Physical Constraints File (nextpnr) - Generated by NoobEDA"]
-        for port, pin in self.pin_mappings.items():
-            pin_clean = pin.replace("PIN_", "")
-            lines.append(f"set_io {port} {pin_clean}")
-
+        content = build_pcf(top, self.pin_mappings)
         with open(out_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write(content)
 
         self.log(f"💾 Exported nextpnr Constraints: {out_path}")
         messagebox.showinfo("Export Successful", f"Generated PCF File:\n{out_path}")
@@ -1109,14 +983,9 @@ class NoobEDAApp(tk.Tk):
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top)) or "top_entity"
         out_path = os.path.join(cwd, f"{top}.xdc")
 
-        lines = ["# Xilinx Design Constraints (Vivado) - Generated by NoobEDA"]
-        for port, pin in self.pin_mappings.items():
-            pin_clean = pin.replace("PIN_", "")
-            lines.append(f"set_property PACKAGE_PIN {pin_clean} [get_ports {{{port}}}]")
-            lines.append(f"set_property IOSTANDARD LVCMOS33 [get_ports {{{port}}}]")
-
+        content = build_xdc(top, self.pin_mappings)
         with open(out_path, "w", encoding="utf-8") as f:
-            f.write("\n".join(lines) + "\n")
+            f.write(content)
 
         self.log(f"💾 Exported Vivado Constraints: {out_path}")
         messagebox.showinfo("Export Successful", f"Generated XDC File:\n{out_path}")
