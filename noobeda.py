@@ -214,7 +214,7 @@ class NoobEDAApp(tk.Tk):
         self.title("NoobEDA - Open-Source FPGA & Digital Design Studio")
         self.geometry("1280x840")
         self.minsize(1020, 700)
-        self.configure(bg="#181825")
+        self.configure(bg="#000000")
 
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
@@ -272,39 +272,47 @@ class NoobEDAApp(tk.Tk):
         self.create_layout()
 
     def configure_styles(self):
-        dark_bg = "#181825"
-        card_bg = "#1e1e2e"
-        accent_blue = "#89b4fa"
-        fg_white = "#cdd6f4"
-        entry_bg = "#313244"
+        dark_bg = "#000000"
+        card_bg = "#050a05"
+        accent_green = "#00ff66"
+        fg_green = "#00ff66"
+        dim_green = "#4e9b58"
+        entry_bg = "#020802"
 
-        self.style.configure(".", background=dark_bg, foreground=fg_white, font=("Segoe UI", 10))
+        self.style.configure(".", background=dark_bg, foreground=fg_green, font=("Segoe UI", 10))
         self.style.configure("TFrame", background=dark_bg)
         self.style.configure("Card.TFrame", background=card_bg, relief="flat")
-        self.style.configure("TLabel", background=dark_bg, foreground=fg_white)
-        self.style.configure("Card.TLabel", background=card_bg, foreground=fg_white)
-        self.style.configure("Header.TLabel", background=card_bg, foreground=accent_blue, font=("Segoe UI", 11, "bold"))
-        self.style.configure("Title.TLabel", background=dark_bg, foreground="#cba6f7", font=("Segoe UI", 15, "bold"))
+        self.style.configure("TLabel", background=dark_bg, foreground=fg_green)
+        self.style.configure("Card.TLabel", background=card_bg, foreground=fg_green)
+        self.style.configure("Header.TLabel", background=card_bg, foreground=accent_green, font=("Segoe UI", 11, "bold"))
+        self.style.configure("Title.TLabel", background=dark_bg, foreground=accent_green, font=("Segoe UI", 15, "bold"))
 
-        self.style.configure("TButton", font=("Segoe UI", 9, "bold"), padding=5, background=entry_bg, foreground=fg_white)
-        self.style.map("TButton", background=[("active", "#45475a")])
+        self.style.configure("TButton", font=("Segoe UI", 9, "bold"), padding=5, background="#0a1a0a", foreground=fg_green)
+        self.style.map("TButton", background=[("active", "#003311"), ("pressed", "#002208")])
 
-        self.style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#3b82f6", foreground="#ffffff")
-        self.style.map("Primary.TButton", background=[("active", "#2563eb")])
+        self.style.configure("Primary.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#00aa44", foreground="#000000")
+        self.style.map("Primary.TButton", background=[("active", "#00ff66"), ("pressed", "#008833")])
 
-        self.style.configure("Success.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#10b981", foreground="#ffffff")
-        self.style.map("Success.TButton", background=[("active", "#059669")])
+        self.style.configure("Success.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#00cc55", foreground="#000000")
+        self.style.map("Success.TButton", background=[("active", "#00ff66"), ("pressed", "#009944")])
 
-        self.style.configure("Warning.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#f59e0b", foreground="#111827")
-        self.style.map("Warning.TButton", background=[("active", "#d97706")])
+        self.style.configure("Warning.TButton", font=("Segoe UI", 10, "bold"), padding=6, background="#003311", foreground=fg_green)
+        self.style.map("Warning.TButton", background=[("active", "#005522"), ("pressed", "#00220a")])
 
         self.style.configure("TNotebook", background=dark_bg, tabmargins=[2, 5, 2, 0])
-        self.style.configure("TNotebook.Tab", background=card_bg, foreground=fg_white, padding=[12, 6], font=("Segoe UI", 10, "bold"))
-        self.style.map("TNotebook.Tab", background=[("selected", "#3b82f6")], foreground=[("selected", "#ffffff")])
+        self.style.configure("TNotebook.Tab", background="#0a1a0a", foreground=dim_green, padding=[12, 6], font=("Segoe UI", 10, "bold"))
+        self.style.map("TNotebook.Tab", background=[("selected", "#003311")], foreground=[("selected", "#00ff66")])
 
-        self.style.configure("Treeview", background="#181825", foreground="#cdd6f4", fieldbackground="#181825", rowheight=24, font=("Segoe UI", 9))
-        self.style.map("Treeview", background=[("selected", "#313244")], foreground=[("selected", "#89b4fa")])
-        self.style.configure("Treeview.Heading", font=("Segoe UI", 9, "bold"))
+        self.style.configure("Treeview", background="#000000", foreground=fg_green, fieldbackground="#000000", rowheight=24, font=("Segoe UI", 9))
+        self.style.map("Treeview", background=[("selected", "#003311")], foreground=[("selected", "#00ff66")])
+        self.style.configure("Treeview.Heading", background="#0a1a0a", foreground=fg_green, font=("Segoe UI", 9, "bold"))
+
+        self.style.configure("TEntry", fieldbackground=entry_bg, foreground=fg_green, insertcolor=fg_green)
+        self.style.configure("TCombobox", fieldbackground=entry_bg, background="#0a1a0a", foreground=fg_green, arrowcolor=fg_green)
+        self.style.map("TCombobox", fieldbackground=[("readonly", entry_bg)], selectbackground=[("readonly", "#003311")], selectforeground=[("readonly", fg_green)])
+
+        self.style.configure("Vertical.TScrollbar", background="#0a1a0a", troughcolor="#000000", arrowcolor=fg_green)
+        self.style.configure("Horizontal.TScrollbar", background="#0a1a0a", troughcolor="#000000", arrowcolor=fg_green)
 
     def create_layout(self):
         # Header Bar
@@ -321,7 +329,9 @@ class NoobEDAApp(tk.Tk):
         ws_bar = ttk.Frame(self, padding=(16, 2, 16, 8))
         ws_bar.pack(fill=tk.X)
         ttk.Label(ws_bar, text="📁 Active Workspace:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT, padx=(0, 6))
-        ent_ws = ttk.Entry(ws_bar, textvariable=self.work_dir)
+        ent_ws = tk.Entry(ws_bar, textvariable=self.work_dir, bg="#020802", fg="#00ff66", insertbackground="#00ff66",
+                          font=("Segoe UI", 9), relief="flat", highlightthickness=1,
+                          highlightbackground="#005522", highlightcolor="#00ff66")
         ent_ws.pack(side=tk.LEFT, fill=tk.X, expand=True)
         ttk.Button(ws_bar, text="Open Project Folder", width=18, command=self.browse_workspace).pack(side=tk.RIGHT, padx=(6, 0))
         ttk.Button(ws_bar, text="🔄 Rescan Files", width=14, command=self.rescan_workspace).pack(side=tk.RIGHT, padx=(6, 0))
@@ -343,7 +353,7 @@ class NoobEDAApp(tk.Tk):
         explorer_hdr = ttk.Frame(left_frame, style="Card.TFrame")
         explorer_hdr.pack(fill=tk.X, pady=(0, 4))
         ttk.Label(explorer_hdr, text="📂 Project Explorer", style="Header.TLabel").pack(side=tk.LEFT)
-        ttk.Label(explorer_hdr, text="Drag to Drop Box or 2x-click", font=("Segoe UI", 8, "italic"), foreground="#a6adc8").pack(side=tk.RIGHT)
+        ttk.Label(explorer_hdr, text="Drag to Drop Box or 2x-click", font=("Segoe UI", 8, "italic"), foreground="#4e9b58").pack(side=tk.RIGHT)
 
         tree_scroll_y = ttk.Scrollbar(left_frame, orient=tk.VERTICAL)
         self.file_tree = ttk.Treeview(left_frame, selectmode="browse", yscrollcommand=tree_scroll_y.set)
@@ -358,7 +368,7 @@ class NoobEDAApp(tk.Tk):
         self.file_tree.bind("<B1-Motion>", self.on_drag_motion)
         self.file_tree.bind("<ButtonRelease-1>", self.on_drag_end)
 
-        self.tree_menu = tk.Menu(self, tearoff=0, bg="#1e1e2e", fg="#cdd6f4")
+        self.tree_menu = tk.Menu(self, tearoff=0, bg="#0a1a0a", fg="#00ff66", activebackground="#003311", activeforeground="#00ff66")
         self.tree_menu.add_command(label="⬆ Set as Top HDL File", command=self.set_selected_as_top)
         self.tree_menu.add_command(label="🧪 Set as Testbench File", command=self.set_selected_as_tb)
         self.tree_menu.add_separator()
@@ -421,7 +431,7 @@ class NoobEDAApp(tk.Tk):
         btn_copy = ttk.Button(term_hdr, text="📋 Copy", width=8, command=self.copy_console)
         btn_copy.pack(side=tk.RIGHT, padx=(4, 0))
 
-        self.console = tk.Text(term_frame, bg="#0d0f18", fg="#a6e3a1", font=("Consolas", 10), insertbackground="#ffffff", relief="flat")
+        self.console = tk.Text(term_frame, bg="#000000", fg="#00ff66", font=("Consolas", 10), insertbackground="#00ff66", relief="flat")
         self.console.pack(fill=tk.BOTH, expand=True, side=tk.TOP)
 
         term_scroll = ttk.Scrollbar(self.console, orient=tk.VERTICAL, command=self.console.yview)
@@ -431,10 +441,12 @@ class NoobEDAApp(tk.Tk):
         term_input_bar = ttk.Frame(term_frame, style="Card.TFrame")
         term_input_bar.pack(fill=tk.X, pady=(6, 0), side=tk.BOTTOM)
 
-        self.lbl_prompt = ttk.Label(term_input_bar, text="noobeda:~$ ", font=("Consolas", 10, "bold"), foreground="#89b4fa")
+        self.lbl_prompt = ttk.Label(term_input_bar, text="noobeda:~$ ", font=("Consolas", 10, "bold"), foreground="#00ff66")
         self.lbl_prompt.pack(side=tk.LEFT, padx=(2, 6))
 
-        self.term_entry = ttk.Entry(term_input_bar, font=("Consolas", 10))
+        self.term_entry = tk.Entry(term_input_bar, bg="#020802", fg="#00ff66", insertbackground="#00ff66",
+                                   font=("Consolas", 10), relief="flat", highlightthickness=1,
+                                   highlightbackground="#005522", highlightcolor="#00ff66")
         self.term_entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
         self.term_entry.bind("<Return>", self.on_terminal_enter)
         self.term_entry.bind("<Up>", self.on_terminal_history_up)
@@ -458,14 +470,14 @@ class NoobEDAApp(tk.Tk):
         ttk.Label(p12, text="Phase 1 & 2: Setup & Elaboration", style="Header.TLabel").pack(anchor=tk.W, pady=(0, 6))
 
         # 3X SIZED DROP BOX for Top HDL File
-        self.drop_top_frame = tk.Frame(p12, bg="#11111b", bd=2, relief="groove", padx=8, pady=8)
+        self.drop_top_frame = tk.Frame(p12, bg="#040a04", bd=2, relief="groove", padx=8, pady=8, highlightbackground="#005522", highlightcolor="#00ff66")
         self.drop_top_frame.pack(fill=tk.X, pady=(2, 6))
         
-        self.lbl_drop_top_title = tk.Label(self.drop_top_frame, text="📂 DROP TOP HDL FILE HERE", font=("Segoe UI", 9, "bold"), bg="#11111b", fg="#89b4fa")
+        self.lbl_drop_top_title = tk.Label(self.drop_top_frame, text="📂 DROP TOP HDL FILE HERE", font=("Segoe UI", 9, "bold"), bg="#040a04", fg="#00ff66")
         self.lbl_drop_top_title.pack(anchor=tk.W)
-        self.lbl_drop_top_file = tk.Label(self.drop_top_frame, text="No file selected (Drag from left or Browse)", font=("Segoe UI", 8), bg="#11111b", fg="#a6adc8")
+        self.lbl_drop_top_file = tk.Label(self.drop_top_frame, text="No file selected (Drag from left or Browse)", font=("Segoe UI", 8), bg="#040a04", fg="#4e9b58")
         self.lbl_drop_top_file.pack(anchor=tk.W, pady=(2, 0))
-        self.lbl_drop_top_ent = tk.Label(self.drop_top_frame, text="Entity: -", font=("Segoe UI", 8, "bold"), bg="#11111b", fg="#a6e3a1")
+        self.lbl_drop_top_ent = tk.Label(self.drop_top_frame, text="Entity: -", font=("Segoe UI", 8, "bold"), bg="#040a04", fg="#00ff66")
         self.lbl_drop_top_ent.pack(anchor=tk.W, pady=(2, 0))
 
         ttk.Label(p12, text="Detected Modules (or select):", style="Card.TLabel").pack(anchor=tk.W)
@@ -475,7 +487,9 @@ class NoobEDAApp(tk.Tk):
         self.combo_hdl.bind("<<ComboboxSelected>>", self.on_hdl_selected)
 
         ttk.Label(p12, text="Top Entity / Module Name:", style="Card.TLabel").pack(anchor=tk.W)
-        ent_top = ttk.Entry(p12, textvariable=self.top_module)
+        ent_top = tk.Entry(p12, textvariable=self.top_module, bg="#020802", fg="#00ff66", insertbackground="#00ff66",
+                           font=("Segoe UI", 9), relief="flat", highlightthickness=1,
+                           highlightbackground="#005522", highlightcolor="#00ff66")
         ent_top.pack(fill=tk.X, pady=(2, 6))
 
         btn_elab = ttk.Button(p12, text="▶ Run Analysis & Elaboration", style="Primary.TButton", command=self.run_elaboration)
@@ -491,14 +505,14 @@ class NoobEDAApp(tk.Tk):
         ttk.Label(p3, text="Phase 3: Logic Simulation", style="Header.TLabel").pack(anchor=tk.W, pady=(0, 6))
 
         # 3X SIZED DROP BOX for Testbench File
-        self.drop_tb_frame = tk.Frame(p3, bg="#11111b", bd=2, relief="groove", padx=8, pady=8)
+        self.drop_tb_frame = tk.Frame(p3, bg="#040a04", bd=2, relief="groove", padx=8, pady=8, highlightbackground="#005522", highlightcolor="#00ff66")
         self.drop_tb_frame.pack(fill=tk.X, pady=(2, 6))
         
-        self.lbl_drop_tb_title = tk.Label(self.drop_tb_frame, text="🧪 DROP TESTBENCH FILE HERE", font=("Segoe UI", 9, "bold"), bg="#11111b", fg="#a6e3a1")
+        self.lbl_drop_tb_title = tk.Label(self.drop_tb_frame, text="🧪 DROP TESTBENCH FILE HERE", font=("Segoe UI", 9, "bold"), bg="#040a04", fg="#00ff66")
         self.lbl_drop_tb_title.pack(anchor=tk.W)
-        self.lbl_drop_tb_file = tk.Label(self.drop_tb_frame, text="No testbench selected (Drag from left or Browse)", font=("Segoe UI", 8), bg="#11111b", fg="#a6adc8")
+        self.lbl_drop_tb_file = tk.Label(self.drop_tb_frame, text="No testbench selected (Drag from left or Browse)", font=("Segoe UI", 8), bg="#040a04", fg="#4e9b58")
         self.lbl_drop_tb_file.pack(anchor=tk.W, pady=(2, 0))
-        self.lbl_drop_tb_ent = tk.Label(self.drop_tb_frame, text="Testbench Entity: -", font=("Segoe UI", 8, "bold"), bg="#11111b", fg="#a6e3a1")
+        self.lbl_drop_tb_ent = tk.Label(self.drop_tb_frame, text="Testbench Entity: -", font=("Segoe UI", 8, "bold"), bg="#040a04", fg="#00ff66")
         self.lbl_drop_tb_ent.pack(anchor=tk.W, pady=(2, 0))
 
         ttk.Label(p3, text="Detected Testbenches (or select):", style="Card.TLabel").pack(anchor=tk.W)
@@ -585,7 +599,7 @@ class NoobEDAApp(tk.Tk):
 
         ttk.Label(right, text="Diagnostic Advice & Best Practices", style="Header.TLabel").pack(anchor=tk.W, pady=(0, 6))
 
-        self.detail_text = tk.Text(right, bg="#11111b", fg="#cdd6f4", font=("Segoe UI", 10), wrap="word", relief="flat")
+        self.detail_text = tk.Text(right, bg="#000000", fg="#00ff66", font=("Consolas", 10), wrap="word", relief="flat", insertbackground="#00ff66")
         self.detail_text.pack(fill=tk.BOTH, expand=True)
 
         self.show_default_rule()
@@ -682,7 +696,7 @@ class NoobEDAApp(tk.Tk):
         canvas_frame = ttk.Frame(parent, style="Card.TFrame")
         canvas_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.schem_canvas = tk.Canvas(canvas_frame, bg="#ffffff", cursor="hand2", highlightthickness=0)
+        self.schem_canvas = tk.Canvas(canvas_frame, bg="#000000", cursor="hand2", highlightthickness=0)
         v_bar = ttk.Scrollbar(canvas_frame, orient=tk.VERTICAL, command=self.schem_canvas.yview)
         h_bar = ttk.Scrollbar(canvas_frame, orient=tk.HORIZONTAL, command=self.schem_canvas.xview)
 
@@ -697,7 +711,7 @@ class NoobEDAApp(tk.Tk):
         self.schem_canvas.bind("<B1-Motion>", self.on_schem_pan_move)
         self.schem_canvas.bind("<MouseWheel>", self.on_schem_mousewheel)
 
-        self.lbl_schem_empty = tk.Label(self.schem_canvas, bg="#ffffff", fg="#6c7086", font=("Segoe UI", 11),
+        self.lbl_schem_empty = tk.Label(self.schem_canvas, bg="#000000", fg="#00aa44", font=("Segoe UI", 11),
                                         text="Generate a logic schematic from Phase 4 to inspect the vector circuit here.\n(Drag to pan • Mouse wheel to zoom)")
         self.lbl_schem_empty.place(relx=0.5, rely=0.5, anchor=tk.CENTER)
 
@@ -714,31 +728,34 @@ class NoobEDAApp(tk.Tk):
             self.zoom_schematic(0.85)
 
     def prepare_svg_for_rendering(self, svg_content):
-        """Inlines CSS attributes into raw SVG elements so vector renderers display all wires and labels."""
+        """Inlines CSS attributes into raw SVG elements so vector renderers display all wires and labels in matrix phosphor green on black."""
         # 1. Add stroke to line elements (wires)
-        svg = re.sub(r'<line\s+', '<line stroke="#000" stroke-width="1.5" ', svg_content)
+        svg = re.sub(r'<line\s+', '<line stroke="#00ff66" stroke-width="1.8" ', svg_content)
         
         # 2. Add stroke and fill to path elements
         def path_repl(m):
             full = m.group(0)
             if 'splitjoinBody' in full:
-                return '<path stroke="#000" fill="#000" '
-            return '<path stroke="#000" stroke-width="1.5" fill="none" '
+                return '<path stroke="#00ff66" fill="#00ff66" '
+            return '<path stroke="#00ff66" stroke-width="1.8" fill="none" '
         svg = re.sub(r'<path\s+', path_repl, svg)
         
         # 3. Add stroke to circle elements
-        svg = re.sub(r'<circle\s+', '<circle stroke="#000" stroke-width="1.5" fill="none" ', svg)
+        svg = re.sub(r'<circle\s+', '<circle stroke="#00ff66" stroke-width="1.8" fill="#000000" ', svg)
         
         # 4. Add fill to text elements
-        svg = re.sub(r'<text\s+', '<text fill="#000" stroke="none" font-family="monospace" font-weight="bold" ', svg)
+        svg = re.sub(r'<text\s+', '<text fill="#00ff66" stroke="none" font-family="monospace" font-weight="bold" ', svg)
         
         # 5. Add stroke to rect elements
         def rect_repl(m):
             full = m.group(0)
             if 'splitjoinBody' in full:
-                return '<rect stroke="#000" fill="#000" '
-            return '<rect stroke="#000" stroke-width="1.5" fill="none" '
+                return '<rect stroke="#00ff66" fill="#00ff66" '
+            return '<rect stroke="#00ff66" stroke-width="1.8" fill="#000000" '
         svg = re.sub(r'<rect\s+', rect_repl, svg)
+
+        # 6. Prepend a black background rectangle so vector renderers don't draw transparent/white
+        svg = re.sub(r'(<svg[^>]*>)', r'\1\n<rect width="100%" height="100%" fill="#000000"/>', svg, count=1)
         
         return svg
 
@@ -810,7 +827,7 @@ class NoobEDAApp(tk.Tk):
 
         ttk.Button(top_bar, text="📁 Load Custom File", width=16, command=self.load_custom_board_file).pack(side=tk.LEFT, padx=4)
 
-        self.lbl_board_status = ttk.Label(top_bar, text="No Board Selected", font=("Segoe UI", 9, "bold"), foreground="#cdd6f4")
+        self.lbl_board_status = ttk.Label(top_bar, text="No Board Selected", font=("Segoe UI", 9, "bold"), foreground="#00aa44")
         self.lbl_board_status.pack(side=tk.RIGHT, padx=6)
 
         # Middle: Pin Assignment Table & Controls
@@ -889,9 +906,9 @@ class NoobEDAApp(tk.Tk):
         else:
             self.combo_assign_pin.set("")
         if self.board_pins:
-            self.lbl_board_status.config(text=f"Device: {self.board_device} | {len(self.board_pins)} Pins Available", foreground="#a6e3a1")
+            self.lbl_board_status.config(text=f"Device: {self.board_device} | {len(self.board_pins)} Pins Available", foreground="#00ff66")
         else:
-            self.lbl_board_status.config(text="No Board Selected", foreground="#cdd6f4")
+            self.lbl_board_status.config(text="No Board Selected", foreground="#00aa44")
 
     def on_board_preset_changed(self, event=None):
         choice = self.board_profile_name.get()
@@ -1176,14 +1193,14 @@ class NoobEDAApp(tk.Tk):
         diag_win = tk.Toplevel(self)
         diag_win.title("Toolchain Diagnostics & Health Inspector")
         diag_win.geometry("640x440")
-        diag_win.configure(bg="#181825")
+        diag_win.configure(bg="#000000")
         diag_win.transient(self)
         diag_win.grab_set()
 
         hdr = ttk.Label(diag_win, text="🛠️ Installed EDA Toolchain Engines", style="Title.TLabel", font=("Segoe UI", 12, "bold"))
         hdr.pack(anchor=tk.W, padx=16, pady=(16, 8))
 
-        content_box = tk.Text(diag_win, bg="#0d0f18", fg="#cdd6f4", font=("Consolas", 10), relief="flat", padx=10, pady=10)
+        content_box = tk.Text(diag_win, bg="#000000", fg="#00ff66", font=("Consolas", 10), relief="flat", padx=10, pady=10, insertbackground="#00ff66")
         content_box.pack(fill=tk.BOTH, expand=True, padx=16, pady=(0, 16))
 
         tools_to_check = [
@@ -1327,14 +1344,14 @@ class NoobEDAApp(tk.Tk):
         target = self.winfo_containing(x, y)
 
         if target and (target == self.drop_top_frame or target in self.drop_top_frame.winfo_children()):
-            self.drop_top_frame.config(bg="#2d3748")
-            self.drop_tb_frame.config(bg="#11111b")
+            self.drop_top_frame.config(bg="#003311")
+            self.drop_tb_frame.config(bg="#040a04")
         elif target and (target == self.drop_tb_frame or target in self.drop_tb_frame.winfo_children()):
-            self.drop_tb_frame.config(bg="#2d3748")
-            self.drop_top_frame.config(bg="#11111b")
+            self.drop_tb_frame.config(bg="#003311")
+            self.drop_top_frame.config(bg="#040a04")
         else:
-            self.drop_top_frame.config(bg="#11111b")
-            self.drop_tb_frame.config(bg="#11111b")
+            self.drop_top_frame.config(bg="#040a04")
+            self.drop_tb_frame.config(bg="#040a04")
 
     def on_drag_end(self, event):
         if not self._dragged_file:
@@ -1342,8 +1359,8 @@ class NoobEDAApp(tk.Tk):
         x, y = event.x_root, event.y_root
         target = self.winfo_containing(x, y)
 
-        self.drop_top_frame.config(bg="#11111b")
-        self.drop_tb_frame.config(bg="#11111b")
+        self.drop_top_frame.config(bg="#040a04")
+        self.drop_tb_frame.config(bg="#040a04")
 
         if target and (target == self.drop_top_frame or target in self.drop_top_frame.winfo_children()):
             self.set_top_hdl_from_file(self._dragged_file)
@@ -1392,9 +1409,9 @@ class NoobEDAApp(tk.Tk):
         top = entities[0] if entities else os.path.splitext(os.path.basename(filepath))[0]
         self.top_module.set(top)
         
-        self.lbl_drop_top_file.config(text=f"📄 {os.path.basename(filepath)}", fg="#ffffff")
-        self.lbl_drop_top_ent.config(text=f"Entity: {top}", fg="#a6e3a1")
-        self.drop_top_frame.config(bd=2, highlightbackground="#3b82f6", highlightcolor="#3b82f6")
+        self.lbl_drop_top_file.config(text=f"📄 {os.path.basename(filepath)}", fg="#00ff66")
+        self.lbl_drop_top_ent.config(text=f"Entity: {top}", fg="#00ff66")
+        self.drop_top_frame.config(bd=2, highlightbackground="#00ff66", highlightcolor="#00ff66")
         self.log(f"✔ Assigned Top HDL: {os.path.basename(filepath)} (Entity: {top})")
 
     def set_tb_from_file(self, filepath):
@@ -1402,9 +1419,9 @@ class NoobEDAApp(tk.Tk):
         entities = extract_hdl_entities(filepath)
         tb_ent = entities[0] if entities else os.path.splitext(os.path.basename(filepath))[0]
         
-        self.lbl_drop_tb_file.config(text=f"🧪 {os.path.basename(filepath)}", fg="#ffffff")
-        self.lbl_drop_tb_ent.config(text=f"Testbench Entity: {tb_ent}", fg="#a6e3a1")
-        self.drop_tb_frame.config(bd=2, highlightbackground="#10b981", highlightcolor="#10b981")
+        self.lbl_drop_tb_file.config(text=f"🧪 {os.path.basename(filepath)}", fg="#00ff66")
+        self.lbl_drop_tb_ent.config(text=f"Testbench Entity: {tb_ent}", fg="#00ff66")
+        self.drop_tb_frame.config(bd=2, highlightbackground="#00ff66", highlightcolor="#00ff66")
         self.log(f"✔ Assigned Testbench: {os.path.basename(filepath)} (Entity: {tb_ent})")
 
     def open_file_in_editor(self, filepath):
