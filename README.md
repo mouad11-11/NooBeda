@@ -81,9 +81,17 @@ Install the open-source EDA engines:
 ```bash
 git clone https://github.com/mouad11-11/NoobEDA.git
 cd NoobEDA
-pip install -r requirements.txt
 python noobeda.py
 ```
+
+#### Optional In-App Vector Viewer (PyMuPDF & Pillow)
+NoobEDA runs out-of-the-box with standard Python and will seamlessly open schematics in your default web browser. If you want the high-resolution interactive vector canvas inside the application tab, install `pymupdf` and `pillow` yourself:
+```bash
+pip install pymupdf pillow
+```
+
+> **⚖️ Note on PyMuPDF (AGPL License)**:  
+> NoobEDA is released under the permissive **MIT License**. NoobEDA does **not** bundle or distribute PyMuPDF binaries; it imports `pymupdf` dynamically only when installed by the user. If you ever package or bundle NoobEDA into standalone binary distributions (e.g. PyInstaller or a Windows `.exe` installer), please review the AGPL-3.0 licensing requirements.
 
 ---
 
