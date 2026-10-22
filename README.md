@@ -19,7 +19,7 @@ Traditional vendor EDA softwares take **20–40 GB** of disk space, requires com
 ## 🚀 Features
 
 - 📁 **Universal Workspace Adaptive**: Change folders anytime or run inside any project. Automatically detects VHDL (`.vhd`) and Verilog (`.v`, `.sv`) sources and testbenches.
-- ⚡ **Instant Analysis & Elaboration**: Run fast syntax checks and submodule port bindings via GHDL or Icarus Verilog in < 2 seconds.
+- ⚡ **Instant Analysis & Elaboration**: Run fast syntax checks and submodule port bindings via GHDL or Icarus Verilog rapidly without commercial toolchain overhead.
 - 🔍 **Inferred Latch Detector**: Spot accidental asynchronous latches (missing `else` or default branches) before synthesis.
 - 🧪 **1-Click Simulation → Waveforms**: Compile, simulate, and launch **GTKWave** or view interactive waveforms inside your editor via `.vcd`.
 - 🎨 **RTL Vector Schematics**: Translates your behavioral HDL into interactive vector diagrams (`.svg`) via Yosys and netlistsvg with standard IEEE electronic logic symbols.
@@ -61,25 +61,27 @@ NoobEDA requires **Python 3.8+** (with Tkinter, which is included by default wit
 
 Install the open-source EDA engines:
 * **All-in-One (Recommended for Windows/Linux/macOS)**:
-  Download the ready-to-run [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases/latest) or install via your system package manager:
+  Download the ready-to-run [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases/latest) which includes GHDL, Icarus Verilog, Yosys, and openFPGALoader.
+* **Or install via system package manager**:
   ```bash
-  # Debian / Ubuntu
-  sudo apt install ghdl iverilog gtkwave yosys nodejs npm
+  # Debian / Ubuntu (22.04+)
+  sudo apt install ghdl iverilog gtkwave yosys openfpgaloader nodejs npm
   npm install -g netlistsvg
 
   # Arch Linux
-  sudo pacman -S ghdl iverilog gtkwave yosys nodejs npm
+  sudo pacman -S ghdl iverilog gtkwave yosys openfpgaloader nodejs npm
   npm install -g netlistsvg
 
   # macOS (Homebrew)
-  brew install ghdl icarus-verilog gtkwave yosys node
+  brew install ghdl icarus-verilog gtkwave yosys openfpgaloader node
   npm install -g netlistsvg
   ```
 
-### 2. Clone and Run
+### 2. Clone and Setup Python Environment
 ```bash
-git clone https://github.com/mouad11-11/NooBeda.git
-cd NooBeda
+git clone https://github.com/mouad11-11/NoobEDA.git
+cd NoobEDA
+pip install -r requirements.txt
 python noobeda.py
 ```
 
@@ -96,7 +98,7 @@ flowchart LR
 ```
 
 1. **Setup**: Select your working directory and designated top module.
-2. **Elaborate**: Catch 95% of typos, missing semicolons, and port mismatches in seconds without running full synthesis.
+2. **Elaborate**: Catch common syntax errors, typos, missing semicolons, and port mismatches rapidly before running full synthesis.
 3. **Simulate**: Run your testbench and view signal transitions in GTKWave with proper Hex/Decimal bus formatting.
 4. **Schematic**: Generate vector SVGs to visually inspect your ALU arithmetic blocks, multiplexers, and state registers.
 5. **Hardware**: Verify cable connectivity before programming silicon.

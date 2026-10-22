@@ -39,7 +39,7 @@ NoobEDA is organized into a clean **3-Pane Cockpit**:
 |  💻 LIVE INTERACTIVE TERMINAL (Bottom)                                                |
 |  • Real-time console log streaming with status icons (✅ / ❌ / ⚡)                    |
 |  • Command execution input with command history (↑ / ↓ arrows)                       |
-|  • [▶ Run]  [⏹ Abort Process]  [🧹 Clear Console]  [📋 Copy Log]                     |
+|  • [▶ Run]  [⏹ Abort]  [🧹 Clear]  [📋 Copy Log]                                    |
 +---------------------------------------------------------------------------------------+
 ```
 
@@ -91,7 +91,7 @@ Contains 4 specialized workspace tabs:
 - **Analyze & Elaborate (`GHDL -a -e` / `iverilog -Wall`)**:
   - Parses language semantics, checks bus-width consistency, and validates entity port mappings.
   - Automatically compiles all dependent HDL files in the project workspace.
-  - Catches syntax errors, undefined signals, and type mismatches in less than 2 seconds.
+  - Catches syntax errors, undefined signals, and type mismatches rapidly before running full synthesis.
 - **Check Inferred Latches**:
   - Leverages Yosys RTL passes (`proc; opt`) or GHDL analysis to verify whether all conditional branches (`if`/`case`) have complete assignments.
   - Protects against unwanted hardware latches that consume clock routing and introduce timing race conditions.
@@ -102,7 +102,7 @@ Contains 4 specialized workspace tabs:
   - Generates a standard Value Change Dump (`simulation.vcd`).
 - Click **📈 Launch GTKWave Waveform**:
   - Opens the native GTKWave GUI with the generated `.vcd` preloaded.
-- Click **⚡ Open in Editor Waveform**:
+- Click **⚡ Open Waveform in Editor**:
   - If you use VS Code with waveform extensions (such as *WaveTrace* or *Wavelyzer*), this opens the `.vcd` directly inside your editor.
 
 ### Phase 4: Gate-Level RTL Schematics
@@ -114,7 +114,7 @@ Contains 4 specialized workspace tabs:
 
 ### Phase 5: JTAG & Hardware Boundary Scan
 - Select your programming cable (e.g., `USB-Blaster (JTAG)`, `FTDI`, `Digilent JTAG-SMT2`).
-- Click **🔍 Scan JTAG Chain**:
+- Click **🔍 Scan Hardware (JTAG)**:
   - Uses `openFPGALoader --detect` to probe the physical JTAG boundary scan chain.
   - Reports connected FPGA device IDs and verifies cable communication.
 
@@ -166,10 +166,11 @@ The **Schematic View** tab embeds a high-DPI vector rendering engine directly in
 - **Interactive Drag-to-Pan**: Click and drag anywhere on the canvas to pan across large, complex netlists.
 - **Mouse-Wheel Zoom**: Scroll the mouse wheel up to zoom in, and scroll down to zoom out (focus stays centered).
 - **Zoom Toolbar Controls**:
-  - `[🔍+ Zoom In]`
-  - `[🔍- Zoom Out]`
-  - `[🔄 100% Reset]`
-  - `[🌐 Open External SVG]` (opens in your default web browser or vector editor)
+  - `[🔍 Zoom In (+)]`
+  - `[🔍 Zoom Out (-)]`
+  - `[↺ Reset (100%)]`
+  - `[🔄 Reload]`
+  - `[🌐 Browser View]` (opens in your default web browser or vector editor)
 
 ---
 

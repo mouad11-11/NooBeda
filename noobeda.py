@@ -515,7 +515,7 @@ class NoobEDAApp(tk.Tk):
             "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
             "1. ALWAYS ELABORATE BEFORE COMPILING:\n"
             "   Don't wait minutes for a full vendor synthesis tool. Use 'Run Analysis & Elaboration' "
-            "to catch typos, syntax bugs, and port mismatches in < 2 seconds.\n\n"
+            "to catch typos, syntax bugs, and port mismatches rapidly before synthesis.\n\n"
             "2. PREVENT UNINTENDED INFERRED LATCHES:\n"
             "   In combinational blocks (always @(*) in Verilog or process(all) in VHDL), "
             "ensure every output signal is explicitly assigned in every branch (always include an 'else' or 'default').\n\n"
@@ -547,7 +547,7 @@ class NoobEDAApp(tk.Tk):
             "Fast Analysis & Syntax Check":
                 "⚡ FAST ELABORATION\n"
                 "• Parses HDL AST, checks hierarchy, binds submodule ports.\n"
-                "• Catches 95% of compilation errors instantly without synthesis overhead.",
+                "• Catches syntax errors, undeclared signals, and port mismatches instantly without synthesis overhead.",
             "Inferred Latch Prevention Rule":
                 "⚠️ INFERRED LATCHES\n"
                 "• Occurs when an output retains its state implicitly across cycles in combinational logic.\n"
