@@ -100,3 +100,20 @@ flowchart LR
 3. **Simulate**: Run your testbench and view signal transitions in GTKWave with proper Hex/Decimal bus formatting.
 4. **Schematic**: Generate vector SVGs to visually inspect your ALU arithmetic blocks, multiplexers, and state registers.
 5. **Hardware**: Verify cable connectivity before programming silicon.
+
+---
+
+## 🙏 Standing on the Shoulders of Giants (Acknowledgements & Gratitude)
+
+NoobEDA would not be possible without the visionary work of the open-source hardware community. We extend our deepest gratitude and respect to the original authors and maintainers whose tools power this cockpit:
+
+- **[Yosys Open SYnthesis Suite](https://github.com/YosysHQ/yosys)** — Created by **Claire Wolf** and maintained by the **YosysHQ** team. A revolutionary, foundational pillar in open-source RTL synthesis, gate mapping, and formal verification.
+- **[GHDL](https://github.com/ghdl/ghdl)** — Created and maintained by **Tristan Gingold** and contributors. The definitive open-source VHDL compiler and synthesizer, making modern VHDL standards (VHDL-2008) accessible to everyone.
+- **[Icarus Verilog](https://github.com/steveicarus/iverilog)** — Created and maintained by **Stephen Williams** and contributors. A rock-solid, widely trusted Verilog simulation engine and AST elaborator.
+- **[netlistsvg](https://github.com/nturley/netlistsvg)** — Created by **Neil Turley** and contributors. Generates clean, standards-compliant IEEE vector schematics from digital netlists.
+- **[GTKWave](https://gtkwave.sourceforge.net/)** — Created by **Tony Bybell** and contributors. The undisputed gold-standard open-source waveform and digital signal viewer.
+- **[openFPGALoader](https://github.com/trabucayre/openFPGALoader)** — Created by **Gwenhael Goavec-Merlan** (`trabucayre`) and contributors. The universal, multi-vendor Swiss Army knife for JTAG scanning and FPGA bitstream flashing.
+- **[OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build)** — Built and curated by the **YosysHQ** team, bundling the entire open-source EDA ecosystem into ready-to-run multiplatform packages.
+- **[PyMuPDF](https://github.com/pymupdf/PyMuPDF)** — High-performance vector rendering engine powering NoobEDA's embedded interactive schematic canvas.
+
+Thank you to everyone who keeps digital hardware design open, accessible, and democratized for students, hobbyists, and engineers worldwide! 🌟
