@@ -1,5 +1,3 @@
-import queue
-import signal
 #!/usr/bin/env python3
 """
 NoobEDA - The Zero-Bloat, Beginner-Friendly FPGA & Digital Design Studio
@@ -11,13 +9,18 @@ import os
 import sys
 import re
 import json
+import queue
+import signal
 import shutil
 import subprocess
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
-# High-Resolution Vector SVG Viewer (PyMuPDF + Pillow)
+# Optional High-Resolution Vector SVG Viewer (PyMuPDF + Pillow).
+# Note: PyMuPDF is licensed under AGPL. NoobEDA is MIT-licensed and never bundles
+# PyMuPDF binaries. PyMuPDF is dynamically imported only if installed by the user.
+# If unavailable, NoobEDA gracefully opens schematics in the system's web browser.
 try:
     import pymupdf
     from PIL import Image, ImageTk
