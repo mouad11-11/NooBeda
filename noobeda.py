@@ -228,9 +228,9 @@ class NoobEDAApp(tk.Tk):
         self.cable_mode = tk.StringVar(value="USB-Blaster (JTAG)")
 
         # Pin Planner State
-        self.board_profile_name = tk.StringVar(value="Terasic DE1 (Cyclone II EP2C20F484C7)")
-        self.board_device = "EP2C20F484C7"
-        self.board_family = "Cyclone II"
+        self.board_profile_name = tk.StringVar(value="")
+        self.board_device = "-"
+        self.board_family = "-"
         self.board_pins = {}  # { peripheral_label: pin_location }
         self.design_ports = []  # list of port dicts
         self.pin_mappings = {}  # { port_name: pin_code }
@@ -270,7 +270,6 @@ class NoobEDAApp(tk.Tk):
         self._tb_map = {}
 
         self.create_layout()
-        self.load_default_board_preset()
 
     def configure_styles(self):
         dark_bg = "#181825"
@@ -805,12 +804,13 @@ class NoobEDAApp(tk.Tk):
             "Custom Board File...",
         ]
         self.combo_board = ttk.Combobox(top_bar, textvariable=self.board_profile_name, values=board_presets, state="readonly", width=36)
+        self.combo_board.set("(Select a Target Board / Preset)")
         self.combo_board.pack(side=tk.LEFT, padx=(0, 8))
         self.combo_board.bind("<<ComboboxSelected>>", self.on_board_preset_changed)
 
         ttk.Button(top_bar, text="📁 Load Custom File", width=16, command=self.load_custom_board_file).pack(side=tk.LEFT, padx=4)
 
-        self.lbl_board_status = ttk.Label(top_bar, text="Device: EP2C20F484C7 | 46 Pins Loaded", font=("Segoe UI", 9, "bold"), foreground="#a6e3a1")
+        self.lbl_board_status = ttk.Label(top_bar, text="No Board Selected", font=("Segoe UI", 9, "bold"), foreground="#cdd6f4")
         self.lbl_board_status.pack(side=tk.RIGHT, padx=6)
 
         # Middle: Pin Assignment Table & Controls
@@ -860,8 +860,10 @@ class NoobEDAApp(tk.Tk):
         ttk.Button(export_bar, text="💾 Export .PCF (nextpnr / iCE40 / ECP5)", command=self.export_pcf).pack(side=tk.LEFT, padx=4)
         ttk.Button(export_bar, text="💾 Export .XDC (Vivado / Xilinx)", command=self.export_xdc).pack(side=tk.LEFT, padx=4)
 
-    def load_default_board_preset(self):
-        # Default Altera Cyclone II DE1 Pinout (EP2C20F484C7)
+    def load_de1_board_preset(self):
+        # Altera Cyclone II DE1 Pinout Preset (EP2C20F484C7)
+        self.board_device = "EP2C20F484C7"
+        self.board_family = "Cyclone II"
         self.board_pins = {
             "CLOCK_50": "PIN_L1", "CLOCK_27": "PIN_D12",
             "KEY[0]": "PIN_R22", "KEY[1]": "PIN_R21", "KEY[2]": "PIN_T22", "KEY[3]": "PIN_T21",
@@ -884,14 +886,17 @@ class NoobEDAApp(tk.Tk):
         self.combo_assign_pin["values"] = items
         if items:
             self.combo_assign_pin.current(0)
-        self.lbl_board_status.config(text=f"Device: {self.board_device} | {len(self.board_pins)} Pins Available")
+        else:
+            self.combo_assign_pin.set("")
+        if self.board_pins:
+            self.lbl_board_status.config(text=f"Device: {self.board_device} | {len(self.board_pins)} Pins Available", foreground="#a6e3a1")
+        else:
+            self.lbl_board_status.config(text="No Board Selected", foreground="#cdd6f4")
 
     def on_board_preset_changed(self, event=None):
         choice = self.board_profile_name.get()
         if "DE1" in choice and "Cyclone II" in choice:
-            self.board_device = "EP2C20F484C7"
-            self.board_family = "Cyclone II"
-            self.load_default_board_preset()
+            self.load_de1_board_preset()
         elif "DE10-Lite" in choice:
             self.board_device = "10M50DAF484C7G"
             self.board_family = "MAX 10"
@@ -1486,7 +1491,11 @@ class NoobEDAApp(tk.Tk):
             top = self.top_module.get() or os.path.splitext(base)[0]
             cmd = f'"{GHDL_BIN}" -a --std=08 {files_str} && "{GHDL_BIN}" -e --std=08 {top}'
         else:
-            cmd = f'"{IVERILOG_BIN}" -t null -Wall "{base}"'
+            all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and not any(kw in f.lower() for kw in ["tb", "test"])]
+            if base not in all_v:
+                all_v.insert(0, base)
+            files_str = " ".join(f'"{f}"' for f in all_v)
+            cmd = f'"{IVERILOG_BIN}" -t null -Wall {files_str}'
             
         self.run_cmd_async(cmd, cwd=cwd)
 
@@ -1532,8 +1541,12 @@ class NoobEDAApp(tk.Tk):
         else:
             hdl = self.hdl_file.get()
             hdl_base = os.path.basename(hdl) if hdl else ""
+            all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and f != tb_base]
+            if hdl_base and hdl_base not in all_v:
+                all_v.insert(0, hdl_base)
+            files_str = " ".join(f'"{f}"' for f in all_v)
             out_vvp = "sim_output.vvp"
-            cmd = f'"{IVERILOG_BIN}" -o "{out_vvp}" "{hdl_base}" "{tb_base}" && "{VVP_BIN}" "{out_vvp}"'
+            cmd = f'"{IVERILOG_BIN}" -o "{out_vvp}" {files_str} "{tb_base}" && "{VVP_BIN}" "{out_vvp}"'
         
         self.run_cmd_async(cmd, cwd=cwd, on_success=lambda: messagebox.showinfo("Simulation", "Simulation completed! Click 'Launch Waveform' to inspect."))
 
@@ -1590,13 +1603,16 @@ class NoobEDAApp(tk.Tk):
                     if p_ghdl.returncode != 0:
                         self.log(f"❌ GHDL Synthesis Error:\n{p_ghdl.stderr}")
                         return
-                    yosys_target = synth_v
+                    yosys_read_cmd = f'read_verilog "{synth_v}"'
                 else:
-                    yosys_target = base
+                    all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and not any(kw in f.lower() for kw in ["tb", "test"])]
+                    if base not in all_v:
+                        all_v.insert(0, base)
+                    yosys_read_cmd = " ".join(f'read_verilog "{f}";' for f in all_v)
 
                 # Step 2: Yosys elaboration and netlist generation
                 self.log("⚡ [2/3] Elaborating gate-level netlist via Yosys...")
-                yosys_cmd = f'read_verilog "{yosys_target}"; proc; opt; write_json "{json_out}"'
+                yosys_cmd = f'{yosys_read_cmd}; proc; opt; write_json "{json_out}"'
                 p_yosys = subprocess.run([YOSYS_BIN, "-p", yosys_cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
                 if p_yosys.returncode != 0:
                     self.log(f"❌ Yosys Synthesis Error:\n{p_yosys.stdout}")
@@ -1624,9 +1640,9 @@ class NoobEDAApp(tk.Tk):
     def open_schematic(self):
         cwd = self.work_dir.get()
         svg_file = os.path.join(cwd, "schematic.svg") if cwd else ""
-        if not (svg_file and os.path.exists(svg_file)) and cwd:
-            svg_file = os.path.join(cwd, "alu_schematic.svg")
-            
+        if not (svg_file and os.path.exists(svg_file)) and self._last_svg_path and os.path.exists(self._last_svg_path):
+            svg_file = self._last_svg_path
+
         if svg_file and os.path.exists(svg_file):
             self.log(f"Opening schematic diagram: {svg_file}")
             if sys.platform.startswith("win"):
