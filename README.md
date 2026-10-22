@@ -10,7 +10,7 @@
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
 [![User Manual](https://img.shields.io/badge/Documentation-User%20Manual-blue.svg)](MANUAL.md)
 
-Traditional vendor EDA softwares take **20–40 GB** of disk space, requires complicated license managers, and often abandons support for older hardware .
+Traditional vendor EDA softwares take **+ 10 GB** of disk space, requires complicated license managers, and often abandons support for older hardware .
 
 **NoobEDA** is a lightweight, cross-platform graphical workbench that stitches the most powerful open-source hardware tools into a seamless, **1-click workflow**.
 
