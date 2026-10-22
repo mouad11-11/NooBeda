@@ -1,3 +1,5 @@
+import queue
+import signal
 #!/usr/bin/env python3
 """
 NoobEDA - The Zero-Bloat, Beginner-Friendly FPGA & Digital Design Studio
@@ -153,6 +155,9 @@ class NoobEDAApp(tk.Tk):
 
         # Process management for aborting tasks safely
         self.current_process = None
+        self._abort_requested = False
+        self.log_queue = queue.Queue()
+        self.after(50, self._drain_log_queue)
 
         # Terminal command history
         self._cmd_history = []
@@ -994,8 +999,18 @@ class NoobEDAApp(tk.Tk):
     # Terminal & Execution Actions
     # ==========================================================================
     def log(self, text):
-        self.console.insert(tk.END, text + "\n")
-        self.console.see(tk.END)
+        self.log_queue.put(str(text))
+
+    def _drain_log_queue(self):
+        try:
+            while True:
+                msg = self.log_queue.get_nowait()
+                self.console.insert(tk.END, msg + "\n")
+                self.console.see(tk.END)
+        except queue.Empty:
+            pass
+        finally:
+            self.after(50, self._drain_log_queue)
 
     def clear_console(self):
         self.console.delete("1.0", tk.END)
@@ -1010,13 +1025,19 @@ class NoobEDAApp(tk.Tk):
             messagebox.showinfo("Clipboard", "Console is currently empty.")
 
     def abort_current_task(self):
-        if self.current_process:
+        self._abort_requested = True
+        proc = self.current_process
+        if proc:
             try:
-                self.current_process.kill()
-                self.current_process = None
-                self.log("🛑 OPERATION ABORTED BY USER.\n")
+                if sys.platform.startswith("win"):
+                    subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                else:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGTERM)
             except Exception as e:
-                self.log(f"Error aborting task: {e}")
+                pass
+            self.current_process = None
+            self.log("🛑 OPERATION ABORTED BY USER.\n")
         else:
             self.log("ℹ No active background process to abort.")
 
@@ -1029,7 +1050,7 @@ class NoobEDAApp(tk.Tk):
         self._history_idx = len(self._cmd_history)
         self.log(f"\nnoobeda:$ {cmd}")
         cwd = self.work_dir.get() if (self.work_dir.get() and os.path.isdir(self.work_dir.get())) else None
-        self.run_cmd_async(cmd, cwd=cwd)
+        self.run_cmd_async(cmd, cwd=cwd, is_terminal=True)
 
     def on_terminal_history_up(self, event=None):
         if self._cmd_history and self._history_idx > 0:
@@ -1329,27 +1350,69 @@ class NoobEDAApp(tk.Tk):
                 self.work_dir.set(os.path.dirname(f))
                 self.rescan_workspace()
 
-    def run_cmd_async(self, cmd, cwd=None, on_success=None):
+    def run_cmd_async(self, cmd_or_cmds, cwd=None, on_success=None, is_terminal=False):
+        if self.current_process is not None:
+            self.log("⚠️ A task is already running. Please wait or click Abort.")
+            return
+
+        self._abort_requested = False
+
+        # Normalize cmd_or_cmds into a list of executable commands
+        if is_terminal:
+            command_list = [cmd_or_cmds]
+        elif isinstance(cmd_or_cmds, list) and len(cmd_or_cmds) > 0 and isinstance(cmd_or_cmds[0], list):
+            command_list = cmd_or_cmds
+        else:
+            command_list = [cmd_or_cmds]
+
         def worker():
-            self.log(f"⚡ RUNNING: {cmd}")
-            try:
-                proc = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, cwd=cwd)
-                self.current_process = proc
-                for line in proc.stdout:
-                    self.log(line.rstrip())
-                proc.wait()
-                self.current_process = None
-                if proc.returncode == 0:
-                    self.log("✅ COMPLETED SUCCESSFULLY.\n")
-                    if on_success:
-                        self.after(0, on_success)
-                elif proc.returncode in (-15, -9, 15, 9):
-                    self.log("⚠️ Task was aborted.\n")
-                else:
-                    self.log(f"❌ FAILED WITH EXIT CODE {proc.returncode}\n")
-            except Exception as e:
-                self.current_process = None
-                self.log(f"❌ ERROR: {e}\n")
+            extra_kwargs = {}
+            if sys.platform.startswith("win"):
+                extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                extra_kwargs["start_new_session"] = True
+
+            all_ok = True
+            for c in command_list:
+                if self._abort_requested:
+                    break
+
+                cmd_display = c if isinstance(c, str) else " ".join(f'"{arg}"' if " " in arg else arg for arg in c)
+                self.log(f"⚡ RUNNING: {cmd_display}")
+                try:
+                    proc = subprocess.Popen(
+                        c,
+                        shell=is_terminal,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.STDOUT,
+                        text=True,
+                        cwd=cwd,
+                        **extra_kwargs
+                    )
+                    self.current_process = proc
+                    for line in proc.stdout:
+                        self.log(line.rstrip())
+                    proc.wait()
+                    self.current_process = None
+
+                    if self._abort_requested:
+                        self.log("🛑 Task aborted.\n")
+                        all_ok = False
+                        break
+                    elif proc.returncode != 0:
+                        self.log(f"❌ FAILED WITH EXIT CODE {proc.returncode}\n")
+                        all_ok = False
+                        break
+                except Exception as e:
+                    self.current_process = None
+                    self.log(f"❌ ERROR: {e}\n")
+                    all_ok = False
+                    break
+
+            if all_ok and not self._abort_requested:
+                self.log("✅ COMPLETED SUCCESSFULLY.\n")
+                if on_success:
+                    self.after(0, on_success)
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
@@ -1364,20 +1427,22 @@ class NoobEDAApp(tk.Tk):
         base = os.path.basename(hdl)
         self.log(f"--- [Phase 2] Analyzing & Elaborating {base} ---")
         
+        raw_top = self.top_module.get() or os.path.splitext(base)[0]
+        top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
+
         if base.lower().endswith((".vhd", ".vhdl")):
             all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not any(kw in f.lower() for kw in ["tb", "test"])]
-            files_str = " ".join(f'"{f}"' for f in all_vhdl)
-            raw_top = self.top_module.get() or os.path.splitext(base)[0]
-            top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
-            cmd = f'"{GHDL_BIN}" -a --std=08 {files_str} && "{GHDL_BIN}" -e --std=08 {top}'
+            cmds = [
+                [GHDL_BIN, "-a", "--std=08"] + all_vhdl,
+                [GHDL_BIN, "-e", "--std=08", top]
+            ]
         else:
             all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and not any(kw in f.lower() for kw in ["tb", "test"])]
             if base not in all_v:
                 all_v.insert(0, base)
-            files_str = " ".join(f'"{f}"' for f in all_v)
-            cmd = f'"{IVERILOG_BIN}" -t null -Wall {files_str}'
+            cmds = [[IVERILOG_BIN, "-t", "null", "-Wall"] + all_v]
             
-        self.run_cmd_async(cmd, cwd=cwd)
+        self.run_cmd_async(cmds, cwd=cwd)
 
     def check_latches(self):
         hdl = self.hdl_file.get()
@@ -1387,16 +1452,17 @@ class NoobEDAApp(tk.Tk):
         
         cwd = os.path.dirname(hdl)
         base = os.path.basename(hdl)
-        top = self.top_module.get() or os.path.splitext(base)[0]
+        raw_top = self.top_module.get() or os.path.splitext(base)[0]
+        top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
         self.log(f"--- Checking for Inferred Latches in {top} ---")
         
         if base.lower().endswith((".vhd", ".vhdl")):
-            cmd = f'"{GHDL_BIN}" -a --std=08 "{base}"'
+            cmd = [GHDL_BIN, "-a", "--std=08", base]
         else:
             yosys_script = f"read_verilog {base}; proc; opt"
-            cmd = f'"{YOSYS_BIN}" -p "{yosys_script}"'
+            cmd = [YOSYS_BIN, "-p", yosys_script]
             
-        self.run_cmd_async(cmd, cwd=cwd)
+        self.run_cmd_async([cmd], cwd=cwd)
 
     def run_simulation(self):
         tb = self.tb_file.get()
@@ -1413,23 +1479,24 @@ class NoobEDAApp(tk.Tk):
         
         if tb_base.lower().endswith((".vhd", ".vhdl")):
             all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl"))]
-            files_str = " ".join(f'"{f}"' for f in all_vhdl)
-            cmd = (
-                f'"{GHDL_BIN}" -a --std=08 {files_str} && '
-                f'"{GHDL_BIN}" -e --std=08 {tb_top} && '
-                f'"{GHDL_BIN}" -r --std=08 {tb_top} --vcd=simulation.vcd'
-            )
+            cmds = [
+                [GHDL_BIN, "-a", "--std=08"] + all_vhdl,
+                [GHDL_BIN, "-e", "--std=08", tb_top],
+                [GHDL_BIN, "-r", "--std=08", tb_top, "--vcd=simulation.vcd"]
+            ]
         else:
             hdl = self.hdl_file.get()
             hdl_base = os.path.basename(hdl) if hdl else ""
             all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and f != tb_base]
             if hdl_base and hdl_base not in all_v:
                 all_v.insert(0, hdl_base)
-            files_str = " ".join(f'"{f}"' for f in all_v)
             out_vvp = "sim_output.vvp"
-            cmd = f'"{IVERILOG_BIN}" -o "{out_vvp}" {files_str} "{tb_base}" && "{VVP_BIN}" "{out_vvp}"'
+            cmds = [
+                [IVERILOG_BIN, "-o", out_vvp] + all_v + [tb_base],
+                [VVP_BIN, out_vvp]
+            ]
         
-        self.run_cmd_async(cmd, cwd=cwd, on_success=lambda: messagebox.showinfo("Simulation", "Simulation completed! Click 'Launch Waveform' to inspect."))
+        self.run_cmd_async(cmds, cwd=cwd, on_success=lambda: messagebox.showinfo("Simulation", "Simulation completed! Click 'Launch Waveform' to inspect."))
 
     def launch_gtkwave(self):
         cwd = self.work_dir.get()
@@ -1465,26 +1532,48 @@ class NoobEDAApp(tk.Tk):
             messagebox.showerror("netlistsvg Missing", "netlistsvg is required to render electronic schematics.\nPlease install it via: npm install -g netlistsvg")
             return
 
+        if self.current_process is not None:
+            self.log("⚠️ A task is already running. Please wait or click Abort.")
+            return
+
         cwd = os.path.dirname(hdl)
         base = os.path.basename(hdl)
-        top = self.top_module.get() or os.path.splitext(base)[0]
+        raw_top = self.top_module.get() or os.path.splitext(base)[0]
+        top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
         self.log(f"--- [Phase 4] Generating Electronic Schematic for {top} (netlistsvg) ---")
 
         json_out = os.path.join(cwd, "netlist.json")
         svg_out = os.path.join(cwd, "schematic.svg")
 
+        self._abort_requested = False
+
         def worker():
+            extra_kwargs = {}
+            if sys.platform.startswith("win"):
+                extra_kwargs["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
+            else:
+                extra_kwargs["start_new_session"] = True
+
             try:
                 # Step 1: Synthesize to Verilog (if VHDL)
                 if base.lower().endswith((".vhd", ".vhdl")):
+                    if self._abort_requested:
+                        return
                     synth_v = os.path.join(cwd, "_noobeda_synth.v")
                     all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not any(kw in f.lower() for kw in ["tb", "test"])]
                     self.log(f"⚡ [1/3] Synthesizing VHDL via GHDL ({len(all_vhdl)} files)...")
                     ghdl_args = [GHDL_BIN, "--synth", "--std=08", "--out=verilog"] + all_vhdl + ["-e", top]
                     with open(synth_v, "w", encoding="utf-8") as f_out:
-                        p_ghdl = subprocess.run(ghdl_args, cwd=cwd, stdout=f_out, stderr=subprocess.PIPE, text=True)
+                        p_ghdl = subprocess.Popen(ghdl_args, cwd=cwd, stdout=f_out, stderr=subprocess.PIPE, text=True, **extra_kwargs)
+                        self.current_process = p_ghdl
+                        _, stderr_data = p_ghdl.communicate()
+                        self.current_process = None
+
+                    if self._abort_requested:
+                        self.log("🛑 Schematic generation aborted.\n")
+                        return
                     if p_ghdl.returncode != 0:
-                        self.log(f"❌ GHDL Synthesis Error:\n{p_ghdl.stderr}")
+                        self.log(f"❌ GHDL Synthesis Error:\n{stderr_data}")
                         return
                     yosys_read_cmd = f'read_verilog "{synth_v}"'
                 else:
@@ -1494,32 +1583,53 @@ class NoobEDAApp(tk.Tk):
                     yosys_read_cmd = " ".join(f'read_verilog "{f}";' for f in all_v)
 
                 # Step 2: Yosys elaboration and netlist generation
+                if self._abort_requested:
+                    return
                 self.log("⚡ [2/3] Elaborating gate-level netlist via Yosys...")
                 yosys_cmd = f'{yosys_read_cmd}; proc; opt; write_json "{json_out}"'
-                p_yosys = subprocess.run([YOSYS_BIN, "-p", yosys_cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                p_yosys = subprocess.Popen([YOSYS_BIN, "-p", yosys_cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **extra_kwargs)
+                self.current_process = p_yosys
+                out_yosys, _ = p_yosys.communicate()
+                self.current_process = None
+
+                if self._abort_requested:
+                    self.log("🛑 Schematic generation aborted.\n")
+                    return
                 if p_yosys.returncode != 0:
-                    self.log(f"❌ Yosys Synthesis Error:\n{p_yosys.stdout}")
+                    self.log(f"❌ Yosys Synthesis Error:\n{out_yosys}")
                     return
 
                 # Step 3: Sanitize JSON for netlistsvg (handling tri-states / inouts)
+                if self._abort_requested:
+                    return
                 sanitize_netlist_json(json_out)
 
                 # Step 4: Netlistsvg rendering
+                if self._abort_requested:
+                    return
                 self.log("⚡ [3/3] Rendering SVG schematic via netlistsvg...")
                 nsvg_bin = NETLISTSVG_BIN
                 if sys.platform.startswith("win") and not nsvg_bin.lower().endswith((".cmd", ".exe", ".bat")):
                     resolved_nsvg = shutil.which(f"{nsvg_bin}.cmd") or shutil.which(nsvg_bin)
                     if resolved_nsvg:
                         nsvg_bin = resolved_nsvg
-                p_svg = subprocess.run([nsvg_bin, json_out, "-o", svg_out], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                p_svg = subprocess.Popen([nsvg_bin, json_out, "-o", svg_out], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **extra_kwargs)
+                self.current_process = p_svg
+                out_svg, _ = p_svg.communicate()
+                self.current_process = None
+
+                if self._abort_requested:
+                    self.log("🛑 Schematic generation aborted.\n")
+                    return
                 if p_svg.returncode != 0:
-                    self.log(f"❌ netlistsvg Error:\n{p_svg.stdout}")
+                    self.log(f"❌ netlistsvg Error:\n{out_svg}")
                     return
 
                 self.log("✅ SCHEMATIC GENERATED SUCCESSFULLY.\n")
                 # Auto-load into embedded in-app viewer
                 self.after(0, lambda: self.load_schematic_in_viewer(svg_out))
             except Exception as e:
+                self.current_process = None
                 self.log(f"❌ ERROR: {e}\n")
 
         t = threading.Thread(target=worker, daemon=True)
@@ -1544,8 +1654,8 @@ class NoobEDAApp(tk.Tk):
 
     def scan_hardware(self):
         self.log("--- [Phase 5] Scanning for Connected Hardware (JTAG Chain) ---")
-        cmd = f'"{OPENFPGA_BIN}" --detect'
-        self.run_cmd_async(cmd)
+        cmd = [OPENFPGA_BIN, "--detect"]
+        self.run_cmd_async([cmd])
 
 if __name__ == "__main__":
     app = NoobEDAApp()
