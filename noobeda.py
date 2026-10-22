@@ -115,9 +115,9 @@ GTKWAVE_BIN = find_binary("gtkwave")
 OPENFPGA_BIN = find_binary("openFPGALoader")
 NETLISTSVG_BIN = find_binary("netlistsvg")
 
-from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module, discover_sources
+from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module, discover_sources, expand_bus_ports
 from netlist import sanitize_netlist_json, prepare_svg_for_rendering, parse_yosys_latch_output
-from exporters import build_qsf, build_pcf, build_xdc
+from exporters import build_qsf, build_pcf, build_xdc, parse_board_file
 
 # ==============================================================================
 # Main Application
@@ -808,8 +808,16 @@ class NoobEDAApp(tk.Tk):
             self.board_device = "iCE40HX8K-CT256"
             self.board_family = "iCE40"
             self.board_pins = {
-                "CLK_12M": "PIN_J3", "LED0": "PIN_M12", "LED1": "PIN_R16", "LED2": "PIN_T15",
-                "SW0": "PIN_K11", "SW1": "PIN_K12", "SW2": "PIN_K13", "SW3": "PIN_K14",
+                "CLK": "J3",
+                "CLK_12M": "J3",
+                "LED[0]": "B5", "LED0": "B5",
+                "LED[1]": "B4", "LED1": "B4",
+                "LED[2]": "A2", "LED2": "A2",
+                "LED[3]": "A1", "LED3": "A1",
+                "LED[4]": "C5", "LED4": "C5",
+                "LED[5]": "C4", "LED5": "C4",
+                "LED[6]": "B3", "LED6": "B3",
+                "LED[7]": "C3", "LED7": "C3",
             }
             self.update_pin_dropdown_values()
         elif "Custom" in choice:
@@ -821,32 +829,11 @@ class NoobEDAApp(tk.Tk):
             return
 
         try:
-            with open(f, "r", encoding="utf-8", errors="ignore") as fp:
-                content = fp.read()
-
-            new_pins = {}
-            lower_ext = os.path.splitext(f)[1].lower()
-
-            if lower_ext == ".qsf":
-                dev = re.search(r"set_global_assignment\s+-name\s+DEVICE\s+(\S+)", content)
-                if dev:
-                    self.board_device = dev.group(1)
-                fam = re.search(r'set_global_assignment\s+-name\s+FAMILY\s+"?(.*?)"?$', content, re.MULTILINE)
-                if fam:
-                    self.board_family = fam.group(1)
-                for pin_code, sig in re.findall(r"set_location_assignment\s+(PIN_\S+)\s+-to\s+(\S+)", content):
-                    new_pins[sig] = pin_code
-            elif lower_ext == ".pcf":
-                self.board_family = "iCE40"
-                for sig, pin_code in re.findall(r"set_io\s+(\S+)\s+(\S+)", content):
-                    new_pins[sig] = pin_code
-            elif lower_ext == ".xdc":
-                self.board_family = "Artix-7 / Xilinx"
-                for pin_code, sig in re.findall(r"set_property\s+PACKAGE_PIN\s+(\S+)\s+\[get_ports\s+(\S+)\]", content):
-                    new_pins[sig] = pin_code
-            elif lower_ext == ".json":
-                data = json.loads(content)
-                new_pins = data.get("pins", data)
+            device, family, new_pins = parse_board_file(f)
+            if device:
+                self.board_device = device
+            if family:
+                self.board_family = family
 
             if new_pins:
                 self.board_pins = new_pins
@@ -865,9 +852,10 @@ class NoobEDAApp(tk.Tk):
             return
 
         top = self.top_module.get()
-        self.design_ports = extract_hdl_ports(hdl, top)
+        raw_ports = extract_hdl_ports(hdl, top)
+        self.design_ports = expand_bus_ports(raw_ports)
         self.refresh_pin_tree()
-        self.log(f"📍 Scanned {len(self.design_ports)} port(s) from {top or os.path.basename(hdl)}.")
+        self.log(f"📍 Scanned {len(self.design_ports)} port pin(s) from {top or os.path.basename(hdl)}.")
 
     def refresh_pin_tree(self):
         self.pin_tree.delete(*self.pin_tree.get_children())
@@ -889,27 +877,64 @@ class NoobEDAApp(tk.Tk):
         if not self.design_ports:
             self.scan_top_entity_ports()
 
+        # Reject two ports on one pin: track used pins
+        used_pins = {pin for p, pin in self.pin_mappings.items() if pin and pin != "(Unassigned)"}
         matched = 0
+
         for port in self.design_ports:
-            p_name = port["name"].lower()
-            # Fuzzy match common hardware signals
+            p_name = port["name"]
+            if p_name in self.pin_mappings and self.pin_mappings[p_name] != "(Unassigned)":
+                continue
+
+            p_lower = p_name.lower()
+            assigned = None
+
+            # 1. Exact match (case-insensitive)
             for desc, pin in self.board_pins.items():
-                d_lower = desc.lower()
-                if p_name == d_lower or p_name in d_lower or d_lower in p_name:
-                    self.pin_mappings[port["name"]] = pin
-                    matched += 1
-                    break
-                elif any(kw in p_name for kw in ["clk", "clock"]) and "clk" in d_lower:
-                    self.pin_mappings[port["name"]] = pin
-                    matched += 1
-                    break
-                elif any(kw in p_name for kw in ["rst", "reset"]) and ("key" in d_lower or "rst" in d_lower):
-                    self.pin_mappings[port["name"]] = pin
-                    matched += 1
+                if pin in used_pins:
+                    continue
+                if p_lower == desc.lower():
+                    assigned = pin
                     break
 
+            # 2. Base name + index match (e.g. led[0] matches ledr[0] or led[0])
+            if not assigned:
+                m_port = re.match(r"^([a-zA-Z0-9_]+)\[([0-9]+)\]$", p_name)
+                for desc, pin in self.board_pins.items():
+                    if pin in used_pins:
+                        continue
+                    m_desc = re.match(r"^([a-zA-Z0-9_]+)\[([0-9]+)\]$", desc)
+                    if m_port and m_desc:
+                        if m_port.group(2) == m_desc.group(2):
+                            p_base = m_port.group(1).lower()
+                            d_base = m_desc.group(1).lower()
+                            if p_base == d_base or d_base.startswith(p_base) or p_base.startswith(d_base):
+                                assigned = pin
+                                break
+
+            # 3. Exact prefix match for scalars (clk matches clk_50, rst matches rst_n, key0)
+            if not assigned and "[" not in p_name:
+                for desc, pin in self.board_pins.items():
+                    if pin in used_pins:
+                        continue
+                    d_lower = desc.lower()
+                    if d_lower.startswith(p_lower + "_") or d_lower.startswith(p_lower):
+                        assigned = pin
+                        break
+                    elif any(kw in p_lower for kw in ["clk", "clock"]) and "clk" in d_lower:
+                        assigned = pin
+                        break
+                    elif any(kw in p_lower for kw in ["rst", "reset"]) and ("key" in d_lower or "rst" in d_lower):
+                        assigned = pin
+                        break
+
+            if assigned:
+                self.pin_mappings[p_name] = assigned
+                used_pins.add(assigned)
+                matched += 1
+
         self.refresh_pin_tree()
-        self.log(f"🎯 Auto-mapped {matched} port(s) to board pins.")
+        self.log(f"🎯 Auto-mapped {matched} port(s) to board pins (duplicate pins rejected).")
 
     def clear_pin_mappings(self):
         self.pin_mappings.clear()
@@ -937,16 +962,44 @@ class NoobEDAApp(tk.Tk):
         port_name = self.pin_tree.item(sel[0], "text")
         selected_pin_val = self.combo_assign_pin.get()
         if selected_pin_val:
-            # Extract PIN_XXX code
             m = re.search(r"(PIN_\S+|\S+)", selected_pin_val)
             pin_code = m.group(1) if m else selected_pin_val
+
+            # Reject two ports on one pin
+            for other_port, mapped_pin in self.pin_mappings.items():
+                if mapped_pin == pin_code and other_port != port_name:
+                    messagebox.showerror(
+                        "Pin Conflict",
+                        f"Pin '{pin_code}' is already assigned to port '{other_port}'.\n"
+                        f"Cannot assign multiple ports to the same physical pin."
+                    )
+                    return
+
             self.pin_mappings[port_name] = pin_code
             self.refresh_pin_tree()
             self.log(f"📍 Assigned {port_name} ➔ {pin_code}")
 
+    def _warn_unassigned_ports_before_export(self):
+        if not self.design_ports:
+            return True
+        unassigned = [p["name"] for p in self.design_ports if self.pin_mappings.get(p["name"], "(Unassigned)") == "(Unassigned)"]
+        if unassigned:
+            msg = f"Warning: {len(unassigned)} port(s) are unassigned:\n" + "\n".join(f"  • {n}" for n in unassigned[:8])
+            if len(unassigned) > 8:
+                msg += f"\n  ... and {len(unassigned) - 8} more"
+            msg += "\n\nDo you want to proceed with export anyway?"
+            proceed = messagebox.askyesno("Unassigned Ports", msg)
+            if not proceed:
+                return False
+            self.log(f"⚠️ Warning: Exporting with {len(unassigned)} unassigned port(s).")
+        return True
+
     def export_qsf(self):
         if not self.pin_mappings:
             messagebox.showwarning("Export QSF", "No pin assignments mapped yet. Click 'Scan Ports' and 'Auto-Map' first.")
+            return
+
+        if not self._warn_unassigned_ports_before_export():
             return
 
         cwd = self.work_dir.get() or os.getcwd()
@@ -966,6 +1019,9 @@ class NoobEDAApp(tk.Tk):
             messagebox.showwarning("Export PCF", "No pin assignments mapped yet.")
             return
 
+        if not self._warn_unassigned_ports_before_export():
+            return
+
         cwd = self.work_dir.get() or os.getcwd()
         raw_top = self.top_module.get() or "top_entity"
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top)) or "top_entity"
@@ -981,6 +1037,9 @@ class NoobEDAApp(tk.Tk):
     def export_xdc(self):
         if not self.pin_mappings:
             messagebox.showwarning("Export XDC", "No pin assignments mapped yet.")
+            return
+
+        if not self._warn_unassigned_ports_before_export():
             return
 
         cwd = self.work_dir.get() or os.getcwd()

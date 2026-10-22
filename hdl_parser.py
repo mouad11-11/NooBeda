@@ -251,3 +251,42 @@ def discover_sources(cwd, extensions=(".v", ".sv", ".vhd", ".vhdl"), exclude_tb=
                     continue
                 found.append(full_path)
     return sorted(found)
+
+def expand_bus_ports(ports: list) -> list:
+    """
+    Expands bus ports so that multi-bit ports like:
+      {'name': 'led', 'dir': 'output', 'type': '[7:0]'}
+    become individual indexed ports:
+      {'name': 'led[0]', 'dir': 'output', 'type': '1-bit'}, ...
+      {'name': 'led[7]', 'dir': 'output', 'type': '1-bit'}
+    """
+    expanded = []
+    for p in ports:
+        name = p.get("name", "")
+        p_dir = p.get("dir", "inout")
+        p_type = p.get("type", "1-bit")
+        
+        # Check Verilog style [7:0] or [0:7]
+        m_v = re.search(r"\[\s*([0-9]+)\s*:\s*([0-9]+)\s*\]", p_type)
+        # Check VHDL style (7 downto 0) or (0 to 7)
+        m_vhdl = re.search(r"\(\s*([0-9]+)\s+(downto|to)\s+([0-9]+)\s*\)", p_type, re.IGNORECASE)
+        
+        if m_v:
+            msb = int(m_v.group(1))
+            lsb = int(m_v.group(2))
+            indices = list(range(lsb, msb + 1)) if msb >= lsb else list(range(msb, lsb + 1))
+            for bit in indices:
+                expanded.append({"name": f"{name}[{bit}]", "dir": p_dir, "type": "1-bit"})
+        elif m_vhdl:
+            left = int(m_vhdl.group(1))
+            direction = m_vhdl.group(2).lower()
+            right = int(m_vhdl.group(3))
+            if direction == "downto":
+                indices = list(range(right, left + 1))
+            else:
+                indices = list(range(left, right + 1))
+            for bit in indices:
+                expanded.append({"name": f"{name}[{bit}]", "dir": p_dir, "type": "1-bit"})
+        else:
+            expanded.append(p)
+    return expanded
