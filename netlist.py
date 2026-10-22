@@ -37,13 +37,13 @@ def prepare_svg_for_rendering(svg_content):
     # 1. Add stroke to line elements (wires)
     svg = re.sub(r'<line\s+', '<line stroke="#000" stroke-width="1.5" ', svg_content)
     
-    # 2. Add stroke and fill to path elements
+    # 2. Add stroke and fill to path elements (splitjoin elements get fill="#000")
     def path_repl(m):
-        full = m.group(0)
-        if 'splitjoinBody' in full:
-            return '<path stroke="#000" fill="#000" '
-        return '<path stroke="#000" stroke-width="1.5" fill="none" '
-    svg = re.sub(r'<path\s+', path_repl, svg)
+        attrs = m.group(1)
+        if 'splitjoin' in attrs.lower():
+            return f'<path stroke="#000" fill="#000"{attrs}>'
+        return f'<path stroke="#000" stroke-width="1.5" fill="none"{attrs}>'
+    svg = re.sub(r'<path([^>]*)>', path_repl, svg)
     
     # 3. Add stroke to circle elements
     svg = re.sub(r'<circle\s+', '<circle stroke="#000" stroke-width="1.5" fill="none" ', svg)
@@ -51,13 +51,21 @@ def prepare_svg_for_rendering(svg_content):
     # 4. Add fill to text elements
     svg = re.sub(r'<text\s+', '<text fill="#000" stroke="none" font-family="monospace" font-weight="bold" ', svg)
     
-    # 5. Add stroke to rect elements
+    # 5. Add stroke to rect elements (splitjoin elements get fill="#000")
     def rect_repl(m):
-        full = m.group(0)
-        if 'splitjoinBody' in full:
-            return '<rect stroke="#000" fill="#000" '
-        return '<rect stroke="#000" stroke-width="1.5" fill="none" '
-    svg = re.sub(r'<rect\s+', rect_repl, svg)
+        attrs = m.group(1)
+        if 'splitjoin' in attrs.lower():
+            return f'<rect stroke="#000" fill="#000"{attrs}>'
+        return f'<rect stroke="#000" stroke-width="1.5" fill="none"{attrs}>'
+    svg = re.sub(r'<rect([^>]*)>', rect_repl, svg)
+
+    # 6. Add explicit style rule for splitjoinBody in SVG
+    style_rule = """<style>
+.splitjoinBody { fill: #000 !important; stroke: #000 !important; }
+line { stroke: #000; stroke-width: 1.5; }
+</style>"""
+    if "<svg" in svg and "</svg>" in svg:
+        svg = re.sub(r'(<svg[^>]*>)', r'\1' + style_rule, svg, count=1)
     
     return svg
 

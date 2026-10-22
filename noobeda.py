@@ -612,9 +612,12 @@ class NoobEDAApp(tk.Tk):
         self.schem_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
         # Interactive Drag-to-Pan & Mousewheel Zoom
+        # Interactive Drag-to-Pan & Mousewheel Zoom (Windows, macOS, and Linux)
         self.schem_canvas.bind("<ButtonPress-1>", self.on_schem_pan_start)
         self.schem_canvas.bind("<B1-Motion>", self.on_schem_pan_move)
         self.schem_canvas.bind("<MouseWheel>", self.on_schem_mousewheel)
+        self.schem_canvas.bind("<Button-4>", lambda e: self.on_schem_mousewheel_linux(e, 1.15))
+        self.schem_canvas.bind("<Button-5>", lambda e: self.on_schem_mousewheel_linux(e, 0.85))
 
         self.lbl_schem_empty = tk.Label(self.schem_canvas, bg="#ffffff", fg="#6c7086", font=("Segoe UI", 11),
                                         text="Generate a logic schematic from Phase 4 to inspect the vector circuit here.\n(Drag to pan • Mouse wheel to zoom)")
@@ -627,15 +630,16 @@ class NoobEDAApp(tk.Tk):
         self.schem_canvas.scan_dragto(event.x, event.y, gain=1)
 
     def on_schem_mousewheel(self, event):
-        if event.delta > 0:
-            self.zoom_schematic(1.15)
-        elif event.delta < 0:
-            self.zoom_schematic(0.85)
+        factor = 1.15 if event.delta > 0 else 0.85
+        self.zoom_schematic(factor, anchor_x=event.x, anchor_y=event.y)
+
+    def on_schem_mousewheel_linux(self, event, factor):
+        self.zoom_schematic(factor, anchor_x=event.x, anchor_y=event.y)
 
     def prepare_svg_for_rendering(self, svg_content):
         return prepare_svg_for_rendering(svg_content)
 
-    def load_schematic_in_viewer(self, svg_path):
+    def load_schematic_in_viewer(self, svg_path, anchor_info=None):
         self._last_svg_path = svg_path
         if not os.path.exists(svg_path):
             return
@@ -652,26 +656,60 @@ class NoobEDAApp(tk.Tk):
             styled_svg = self.prepare_svg_for_rendering(raw_svg)
             doc = pymupdf.open(stream=styled_svg.encode("utf-8"), filetype="svg")
             page = doc[0]
+
             scale = max(0.2, min(5.0, self._current_zoom / 100.0))
-            pix = page.get_pixmap(dpi=int(96 * scale))
+            
+            # Cap max pixmap dimensions to prevent memory spikes on large netlists
+            MAX_PIXMAP_DIM = 4096
+            page_w = page.rect.width
+            page_h = page.rect.height
+            est_w = page_w * (scale * 96.0 / 72.0)
+            est_h = page_h * (scale * 96.0 / 72.0)
+            if est_w > MAX_PIXMAP_DIM or est_h > MAX_PIXMAP_DIM:
+                scale_cap = min(MAX_PIXMAP_DIM / max(est_w, 1.0), MAX_PIXMAP_DIM / max(est_h, 1.0))
+                scale = scale * scale_cap
+
+            dpi = max(24, int(96 * scale))
+            pix = page.get_pixmap(dpi=dpi)
             img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
             self._schem_photo = ImageTk.PhotoImage(img)
 
             self.schem_canvas.delete("all")
             self.schem_canvas.create_image(0, 0, anchor="nw", image=self._schem_photo)
             self.schem_canvas.config(scrollregion=(0, 0, pix.width, pix.height))
+
+            # Anchor zoom at the cursor position
+            if anchor_info:
+                old_cx, old_cy, win_x, win_y, zoom_ratio = anchor_info
+                new_cx = old_cx * zoom_ratio
+                new_cy = old_cy * zoom_ratio
+                target_left = new_cx - win_x
+                target_top = new_cy - win_y
+                if pix.width > 0:
+                    self.schem_canvas.xview_moveto(max(0.0, min(1.0, target_left / pix.width)))
+                if pix.height > 0:
+                    self.schem_canvas.yview_moveto(max(0.0, min(1.0, target_top / pix.height)))
+
             self.notebook.select(self.tab_schem)
         except Exception as e:
             self.log(f"Notice loading in-app viewer: {e}")
             self.open_schematic()
 
-    def zoom_schematic(self, factor):
+    def zoom_schematic(self, factor, anchor_x=None, anchor_y=None):
+        old_zoom = self._current_zoom
         if factor == 0:
             self._current_zoom = 100
         else:
             self._current_zoom = max(20, min(600, int(self._current_zoom * factor)))
+        
+        anchor_info = None
+        if anchor_x is not None and anchor_y is not None and old_zoom > 0:
+            cx = self.schem_canvas.canvasx(anchor_x)
+            cy = self.schem_canvas.canvasy(anchor_y)
+            anchor_info = (cx, cy, anchor_x, anchor_y, self._current_zoom / float(old_zoom))
+
         if self._last_svg_path and os.path.exists(self._last_svg_path):
-            self.load_schematic_in_viewer(self._last_svg_path)
+            self.load_schematic_in_viewer(self._last_svg_path, anchor_info=anchor_info)
 
     def reload_schematic_view(self):
         cwd = self.work_dir.get()
