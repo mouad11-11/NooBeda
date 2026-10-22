@@ -714,6 +714,35 @@ class NoobEDAApp(tk.Tk):
         elif event.delta < 0:
             self.zoom_schematic(0.85)
 
+    def prepare_svg_for_rendering(self, svg_content):
+        """Inlines CSS attributes into raw SVG elements so vector renderers display all wires and labels."""
+        # 1. Add stroke to line elements (wires)
+        svg = re.sub(r'<line\s+', '<line stroke="#000" stroke-width="1.5" ', svg_content)
+        
+        # 2. Add stroke and fill to path elements
+        def path_repl(m):
+            full = m.group(0)
+            if 'splitjoinBody' in full:
+                return '<path stroke="#000" fill="#000" '
+            return '<path stroke="#000" stroke-width="1.5" fill="none" '
+        svg = re.sub(r'<path\s+', path_repl, svg)
+        
+        # 3. Add stroke to circle elements
+        svg = re.sub(r'<circle\s+', '<circle stroke="#000" stroke-width="1.5" fill="none" ', svg)
+        
+        # 4. Add fill to text elements
+        svg = re.sub(r'<text\s+', '<text fill="#000" stroke="none" font-family="monospace" font-weight="bold" ', svg)
+        
+        # 5. Add stroke to rect elements
+        def rect_repl(m):
+            full = m.group(0)
+            if 'splitjoinBody' in full:
+                return '<rect stroke="#000" fill="#000" '
+            return '<rect stroke="#000" stroke-width="1.5" fill="none" '
+        svg = re.sub(r'<rect\s+', rect_repl, svg)
+        
+        return svg
+
     def load_schematic_in_viewer(self, svg_path):
         self._last_svg_path = svg_path
         if not os.path.exists(svg_path):
@@ -725,7 +754,11 @@ class NoobEDAApp(tk.Tk):
 
         try:
             self.lbl_schem_empty.place_forget()
-            doc = pymupdf.open(svg_path)
+            with open(svg_path, "r", encoding="utf-8", errors="ignore") as f:
+                raw_svg = f.read()
+
+            styled_svg = self.prepare_svg_for_rendering(raw_svg)
+            doc = pymupdf.open(stream=styled_svg.encode("utf-8"), filetype="svg")
             page = doc[0]
             scale = max(0.2, min(5.0, self._current_zoom / 100.0))
             pix = page.get_pixmap(dpi=int(96 * scale))
