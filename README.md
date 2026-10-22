@@ -8,6 +8,7 @@
 
 [![Python 3.8+](https://img.shields.io/badge/Python-3.8+-green.svg)](https://www.python.org/)
 [![Platform: Windows | Linux | macOS](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey.svg)]()
+[![User Manual](https://img.shields.io/badge/Documentation-User%20Manual-blue.svg)](MANUAL.md)
 
 Traditional vendor EDA software (Quartus, Vivado, ModelSim) takes **20–40 GB** of disk space, requires complicated license managers, and often abandons support for older hardware (such as Cyclone II boards).
 
@@ -39,6 +40,17 @@ NoobEDA acts as a graphical control deck over best-in-class open-source engines:
 | **[Yosys](https://github.com/YosysHQ/yosys)** | RTL synthesis engine for gate mapping and structural extraction |
 | **[netlistsvg](https://github.com/nturley/netlistsvg)** | High-quality electronic schematic renderer with standard IEEE symbols |
 | **[openFPGALoader](https://github.com/trabucayre/openFPGALoader)** | Universal JTAG boundary-scan and FPGA bitstream flasher |
+
+---
+
+## 📖 Complete User Manual
+
+Looking for in-depth guidance on using NoobEDA? Read our comprehensive **[User Manual & Guidebook](MANUAL.md)** covering:
+- 3-Pane Cockpit Tour & Pro-Tips
+- Step-by-Step VHDL & Verilog Tutorials
+- In-App Vector Schematic Exploration
+- Pin & Chip Planner (.QSF / .PCF / .XDC Constraint Exporters)
+- Multi-File Design Management & Hardware Diagnostic Rules
 
 ---
 
