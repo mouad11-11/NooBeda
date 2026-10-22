@@ -233,3 +233,21 @@ def get_top_module(filepath):
         return candidates[-1]
 
     return entities[-1]
+def discover_sources(cwd, extensions=(".v", ".sv", ".vhd", ".vhdl"), exclude_tb=False):
+    """
+    Recursively discovers HDL source files in cwd, skipping build/temporary directories.
+    Optionally filters out testbenches.
+    """
+    if not cwd or not os.path.exists(cwd):
+        return []
+    found = []
+    skip_dirs = {"_build", "build", "work", "__pycache__", ".git", ".svn", "dist"}
+    for root, dirs, files in os.walk(cwd):
+        dirs[:] = [d for d in dirs if not d.startswith(".") and d.lower() not in skip_dirs]
+        for f in files:
+            if any(f.lower().endswith(ext) for ext in extensions):
+                full_path = os.path.join(root, f)
+                if exclude_tb and is_testbench_file(full_path):
+                    continue
+                found.append(full_path)
+    return sorted(found)

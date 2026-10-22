@@ -115,7 +115,7 @@ GTKWAVE_BIN = find_binary("gtkwave")
 OPENFPGA_BIN = find_binary("openFPGALoader")
 NETLISTSVG_BIN = find_binary("netlistsvg")
 
-from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module
+from hdl_parser import extract_hdl_entities, extract_hdl_ports, is_testbench_file, get_top_module, discover_sources
 from netlist import sanitize_netlist_json, prepare_svg_for_rendering
 from exporters import build_qsf, build_pcf, build_xdc
 
@@ -1423,25 +1423,28 @@ class NoobEDAApp(tk.Tk):
             messagebox.showerror("Error", "Please select or drop a valid HDL file first.")
             return
 
-        cwd = os.path.dirname(hdl)
+        cwd = self.work_dir.get() or os.path.dirname(hdl)
+        build_dir = os.path.join(cwd, "_build")
+        os.makedirs(build_dir, exist_ok=True)
+
         base = os.path.basename(hdl)
-        self.log(f"--- [Phase 2] Analyzing & Elaborating {base} ---")
-        
         raw_top = self.top_module.get() or os.path.splitext(base)[0]
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
+        self.log(f"--- [Phase 2] Analyzing & Elaborating {top} ---")
 
         if base.lower().endswith((".vhd", ".vhdl")):
-            all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not any(kw in f.lower() for kw in ["tb", "test"])]
+            all_vhdl = discover_sources(cwd, extensions=(".vhd", ".vhdl"), exclude_tb=True)
             cmds = [
-                [GHDL_BIN, "-a", "--std=08"] + all_vhdl,
-                [GHDL_BIN, "-e", "--std=08", top]
+                [GHDL_BIN, "-i", f"--workdir={build_dir}", "--std=08"] + all_vhdl,
+                [GHDL_BIN, "-m", f"--workdir={build_dir}", "--std=08", top]
             ]
         else:
-            all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and not any(kw in f.lower() for kw in ["tb", "test"])]
-            if base not in all_v:
-                all_v.insert(0, base)
-            cmds = [[IVERILOG_BIN, "-t", "null", "-Wall"] + all_v]
-            
+            all_v = discover_sources(cwd, extensions=(".v", ".sv"), exclude_tb=True)
+            if hdl not in all_v:
+                all_v.insert(0, hdl)
+            flags = ["-g2012", "-t", "null", "-Wall"] if any(f.lower().endswith(".sv") for f in all_v) else ["-t", "null", "-Wall"]
+            cmds = [[IVERILOG_BIN] + flags + all_v]
+
         self.run_cmd_async(cmds, cwd=cwd)
 
     def check_latches(self):
@@ -1470,43 +1473,63 @@ class NoobEDAApp(tk.Tk):
             messagebox.showerror("Error", "Please select or drop a testbench file first.")
             return
 
-        cwd = os.path.dirname(tb)
+        cwd = self.work_dir.get() or os.path.dirname(tb)
+        build_dir = os.path.join(cwd, "_build")
+        os.makedirs(build_dir, exist_ok=True)
+
         tb_base = os.path.basename(tb)
         tb_entities = extract_hdl_entities(tb)
         raw_tb = tb_entities[0] if tb_entities else os.path.splitext(tb_base)[0]
         tb_top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_tb))
         self.log(f"--- [Phase 3] Running Simulation for {tb_top} ---")
-        
+
+        vcd_out = os.path.join(build_dir, "simulation.vcd")
+
         if tb_base.lower().endswith((".vhd", ".vhdl")):
-            all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl"))]
+            all_vhdl = discover_sources(cwd, extensions=(".vhd", ".vhdl"), exclude_tb=False)
             cmds = [
-                [GHDL_BIN, "-a", "--std=08"] + all_vhdl,
-                [GHDL_BIN, "-e", "--std=08", tb_top],
-                [GHDL_BIN, "-r", "--std=08", tb_top, "--vcd=simulation.vcd"]
+                [GHDL_BIN, "-i", f"--workdir={build_dir}", "--std=08"] + all_vhdl,
+                [GHDL_BIN, "-m", f"--workdir={build_dir}", "--std=08", tb_top],
+                [GHDL_BIN, "-r", f"--workdir={build_dir}", "--std=08", tb_top, f"--vcd={vcd_out}"]
             ]
         else:
-            hdl = self.hdl_file.get()
-            hdl_base = os.path.basename(hdl) if hdl else ""
-            all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and f != tb_base]
-            if hdl_base and hdl_base not in all_v:
-                all_v.insert(0, hdl_base)
-            out_vvp = "sim_output.vvp"
+            all_v = discover_sources(cwd, extensions=(".v", ".sv"), exclude_tb=False)
+            if tb not in all_v:
+                all_v.append(tb)
+            out_vvp = os.path.join(build_dir, "sim_output.vvp")
+            flags = ["-g2012"] if any(f.lower().endswith(".sv") for f in all_v) else []
             cmds = [
-                [IVERILOG_BIN, "-o", out_vvp] + all_v + [tb_base],
+                [IVERILOG_BIN] + flags + ["-o", out_vvp] + all_v,
                 [VVP_BIN, out_vvp]
             ]
-        
+
         self.run_cmd_async(cmds, cwd=cwd, on_success=lambda: messagebox.showinfo("Simulation", "Simulation completed! Click 'Launch Waveform' to inspect."))
 
-    def launch_gtkwave(self):
+    def get_newest_vcd(self):
         cwd = self.work_dir.get()
-        vcd_files = [f for f in os.listdir(cwd) if f.endswith(".vcd")] if cwd and os.path.exists(cwd) else []
-        vcd_arg = f'"{os.path.join(cwd, vcd_files[0])}"' if vcd_files else ""
+        if not cwd or not os.path.exists(cwd):
+            return None
+        vcds = []
+        for root, dirs, files in os.walk(cwd):
+            dirs[:] = [d for d in dirs if d not in [".git", "__pycache__"]]
+            for f in files:
+                if f.endswith(".vcd"):
+                    p = os.path.join(root, f)
+                    try:
+                        vcds.append((os.path.getmtime(p), p))
+                    except Exception:
+                        pass
+        if vcds:
+            vcds.sort(reverse=True)
+            return vcds[0][1]
+        return None
 
-        self.log(f"--- Launching GTKWave GUI ({vcd_arg or 'No VCD found'}) ---")
+    def launch_gtkwave(self):
+        vcd_target = self.get_newest_vcd()
+        self.log(f"--- Launching GTKWave GUI ({vcd_target or 'No VCD found'}) ---")
         gtk_args = [GTKWAVE_BIN]
-        if vcd_files:
-            gtk_args.append(os.path.join(cwd, vcd_files[0]))
+        if vcd_target:
+            gtk_args.append(vcd_target)
         try:
             subprocess.Popen(gtk_args, cwd=os.path.dirname(GTKWAVE_BIN) if os.path.isabs(GTKWAVE_BIN) else None)
             self.log("Launched GTKWave.")
@@ -1514,11 +1537,9 @@ class NoobEDAApp(tk.Tk):
             self.log(f"Failed to launch GTKWave: {e}")
 
     def open_vsc_wave(self):
-        cwd = self.work_dir.get()
-        vcd_files = [f for f in os.listdir(cwd) if f.endswith(".vcd")] if cwd and os.path.exists(cwd) else []
-        if vcd_files:
-            vcd_path = os.path.join(cwd, vcd_files[0])
-            self.open_file_in_editor(vcd_path)
+        vcd_target = self.get_newest_vcd()
+        if vcd_target:
+            self.open_file_in_editor(vcd_target)
         else:
             messagebox.showinfo("Waveform", "No .vcd file found in current workspace. Run simulation first.")
 
@@ -1536,14 +1557,17 @@ class NoobEDAApp(tk.Tk):
             self.log("⚠️ A task is already running. Please wait or click Abort.")
             return
 
-        cwd = os.path.dirname(hdl)
+        cwd = self.work_dir.get() or os.path.dirname(hdl)
+        build_dir = os.path.join(cwd, "_build")
+        os.makedirs(build_dir, exist_ok=True)
+
         base = os.path.basename(hdl)
         raw_top = self.top_module.get() or os.path.splitext(base)[0]
         top = re.sub(r'[^a-zA-Z0-9_]', '_', os.path.basename(raw_top))
         self.log(f"--- [Phase 4] Generating Electronic Schematic for {top} (netlistsvg) ---")
 
-        json_out = os.path.join(cwd, "netlist.json")
-        svg_out = os.path.join(cwd, "schematic.svg")
+        json_out = os.path.join(build_dir, "netlist.json")
+        svg_out = os.path.join(build_dir, "schematic.svg")
 
         self._abort_requested = False
 
@@ -1559,10 +1583,10 @@ class NoobEDAApp(tk.Tk):
                 if base.lower().endswith((".vhd", ".vhdl")):
                     if self._abort_requested:
                         return
-                    synth_v = os.path.join(cwd, "_noobeda_synth.v")
-                    all_vhdl = [f for f in os.listdir(cwd) if f.lower().endswith((".vhd", ".vhdl")) and not any(kw in f.lower() for kw in ["tb", "test"])]
+                    synth_v = os.path.join(build_dir, "_noobeda_synth.v")
+                    all_vhdl = discover_sources(cwd, extensions=(".vhd", ".vhdl"), exclude_tb=True)
                     self.log(f"⚡ [1/3] Synthesizing VHDL via GHDL ({len(all_vhdl)} files)...")
-                    ghdl_args = [GHDL_BIN, "--synth", "--std=08", "--out=verilog"] + all_vhdl + ["-e", top]
+                    ghdl_args = [GHDL_BIN, "--synth", f"--workdir={build_dir}", "--std=08", "--out=verilog"] + all_vhdl + ["-e", top]
                     with open(synth_v, "w", encoding="utf-8") as f_out:
                         p_ghdl = subprocess.Popen(ghdl_args, cwd=cwd, stdout=f_out, stderr=subprocess.PIPE, text=True, **extra_kwargs)
                         self.current_process = p_ghdl
@@ -1577,16 +1601,20 @@ class NoobEDAApp(tk.Tk):
                         return
                     yosys_read_cmd = f'read_verilog "{synth_v}"'
                 else:
-                    all_v = [f for f in os.listdir(cwd) if f.lower().endswith((".v", ".sv")) and not any(kw in f.lower() for kw in ["tb", "test"])]
-                    if base not in all_v:
-                        all_v.insert(0, base)
-                    yosys_read_cmd = " ".join(f'read_verilog "{f}";' for f in all_v)
+                    all_v = discover_sources(cwd, extensions=(".v", ".sv"), exclude_tb=True)
+                    if hdl not in all_v:
+                        all_v.insert(0, hdl)
+                    read_cmds = []
+                    for f in all_v:
+                        flag = "-sv" if f.lower().endswith(".sv") else ""
+                        read_cmds.append(f'read_verilog {flag} "{f}";')
+                    yosys_read_cmd = " ".join(read_cmds)
 
-                # Step 2: Yosys elaboration and netlist generation
+                # Step 2: Yosys elaboration and netlist generation with hierarchy -top
                 if self._abort_requested:
                     return
                 self.log("⚡ [2/3] Elaborating gate-level netlist via Yosys...")
-                yosys_cmd = f'{yosys_read_cmd}; proc; opt; write_json "{json_out}"'
+                yosys_cmd = f'{yosys_read_cmd}; hierarchy -check -top {top}; proc; opt; write_json "{json_out}"'
                 p_yosys = subprocess.Popen([YOSYS_BIN, "-p", yosys_cmd], cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, **extra_kwargs)
                 self.current_process = p_yosys
                 out_yosys, _ = p_yosys.communicate()
@@ -1654,7 +1682,21 @@ class NoobEDAApp(tk.Tk):
 
     def scan_hardware(self):
         self.log("--- [Phase 5] Scanning for Connected Hardware (JTAG Chain) ---")
-        cmd = [OPENFPGA_BIN, "--detect"]
+        cable = self.cable_mode.get()
+        cable_arg = None
+        if "USB-Blaster" in cable:
+            cable_arg = "usb-blaster"
+        elif "FTDI" in cable:
+            cable_arg = "ft2232"
+        elif "DirtyJTAG" in cable:
+            cable_arg = "dirtyJtag"
+        elif "Digilent" in cable:
+            cable_arg = "digilent"
+
+        if cable_arg:
+            cmd = [OPENFPGA_BIN, "-c", cable_arg, "--detect"]
+        else:
+            cmd = [OPENFPGA_BIN, "--detect"]
         self.run_cmd_async([cmd])
 
 if __name__ == "__main__":
