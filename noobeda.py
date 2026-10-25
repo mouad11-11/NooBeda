@@ -41,10 +41,13 @@ if sys.platform.startswith("win"):
 # ==============================================================================
 def configure_toolchain_environment():
     """Configures environment variables and PATH for toolchains across platforms."""
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     if sys.platform.startswith("win"):
         oss_candidates = [
+            os.path.join(base_dir, "tools", "oss-cad-suite"),
             r"C:\tools\oss-cad-suite",
             os.path.join(os.environ.get("ProgramFiles", r"C:\Program Files"), "oss-cad-suite"),
+            os.path.join(os.environ.get("LOCALAPPDATA", ""), "oss-cad-suite"),
         ]
         for oss in oss_candidates:
             if os.path.isdir(oss):
@@ -59,6 +62,7 @@ configure_toolchain_environment()
 def get_candidate_tool_dirs():
     """Returns candidate tool installation paths across operating systems."""
     dirs = []
+    base_dir = os.path.dirname(os.path.abspath(__file__))
     if sys.platform.startswith("win"):
         appdata = os.environ.get("APPDATA", "")
         localappdata = os.environ.get("LOCALAPPDATA", "")
@@ -66,6 +70,8 @@ def get_candidate_tool_dirs():
         prog_files_x86 = os.environ.get("ProgramFiles(x86)", r"C:\Program Files (x86)")
 
         candidates = [
+            os.path.join(base_dir, "tools", "oss-cad-suite", "bin"),
+            os.path.join(base_dir, "tools", "oss-cad-suite", "lib"),
             r"C:\tools\oss-cad-suite\bin",
             r"C:\tools\oss-cad-suite\lib",
             r"C:\tools\gtkwave-win64\gtkwave64\bin",

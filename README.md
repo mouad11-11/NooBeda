@@ -56,6 +56,22 @@ Looking for in-depth guidance on using NoobEDA? Read our comprehensive **[User M
 
 ## 📦 Installation & Getting Started
 
+### ⚡ 1-Click Launch on Windows (Zero Configuration)
+If you are on Windows, simply double-click:
+`cmd
+start_noobeda.bat
+`
+This automated launcher:
+1. Verifies Python 3 is installed (or offers a one-click install via winget).
+2. Configures in-app graphics packages (pymupdf, pillow).
+3. Automatically detects or downloads the latest [OSS CAD Suite](https://github.com/YosysHQ/oss-cad-suite-build/releases/latest) (Yosys, GHDL, Icarus, GTKWave, openFPGALoader).
+4. Configures the environment dynamically without requiring you to edit Windows system PATH variables.
+5. Immediately starts the NoobEDA studio.
+
+---
+
+### Manual / Cross-Platform Setup
+
 ### 1. Prerequisites
 NoobEDA requires **Python 3.8+** (with Tkinter, which is included by default with standard Python installers).
 
